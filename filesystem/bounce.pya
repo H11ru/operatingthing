@@ -1,0 +1,65 @@
+import pygame
+
+# Initialize state
+ball_pos = None
+ball_vel = [300, 240]  # Pixels per second instead of per frame
+ball_radius = 20
+
+def init(rect):
+    global ball_pos
+    # Start ball in center of content area (relative coordinates)
+    ball_pos = [rect.width / 2, rect.height / 2]
+
+def handle_event(event):
+    global ball_vel
+    if event.type == pygame.MOUSEBUTTONDOWN:
+        # Reverse ball direction on click
+        ball_vel[0] *= -1
+        ball_vel[1] *= -1
+
+def main(screen, rect):
+    global ball_pos, ball_vel
+    
+    # Use delta_time for frame-rate independent movement
+    ball_pos[0] += ball_vel[0] * delta_time
+    ball_pos[1] += ball_vel[1] * delta_time
+
+    # Bounce off window edges using relative coordinates
+    if ball_pos[0] - ball_radius <= 0:
+        ball_pos[0] = ball_radius
+        ball_vel[0] = abs(ball_vel[0])
+    elif ball_pos[0] + ball_radius >= rect.width:
+        ball_pos[0] = rect.width - ball_radius
+        ball_vel[0] = -abs(ball_vel[0])
+        
+    if ball_pos[1] - ball_radius <= 0:
+        ball_pos[1] = ball_radius
+        ball_vel[1] = abs(ball_vel[1])
+    elif ball_pos[1] + ball_radius >= rect.height:
+        ball_pos[1] = rect.height - ball_radius
+        ball_vel[1] = -abs(ball_vel[1])
+
+    # Draw cyberpunk-themed background and ball
+    pygame.draw.rect(screen, (0, 0, 0), rect)  # Black background
+    
+    # Draw grid lines
+    for x in range(0, rect.width, 20):
+        alpha = max(0, min(255, 255 - (x * 2)))
+        pygame.draw.line(screen, (0, alpha//2, 0), 
+                        (rect.left + x, rect.top),
+                        (rect.left + x, rect.bottom))
+    for y in range(0, rect.height, 20):
+        alpha = max(0, min(255, 255 - (y * 2)))
+        pygame.draw.line(screen, (0, alpha//2, 0),
+                        (rect.left, rect.top + y),
+                        (rect.right, rect.top + y))
+    
+    # Convert relative ball position to screen coordinates for drawing
+    screen_x = rect.left + ball_pos[0]
+    screen_y = rect.top + ball_pos[1]
+    
+    # Draw glowing ball
+    for r in range(ball_radius + 10, ball_radius - 1, -2):
+        alpha = max(0, min(255, int(255 * (r - ball_radius + 10) / 10)))
+        pygame.draw.circle(screen, (0, alpha, 0), 
+                         (int(screen_x), int(screen_y)), r)

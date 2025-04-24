@@ -1,0 +1,51 @@
+import pygame
+import math
+
+# State variables
+time_passed = 0
+wave_offset = 0
+
+def init(rect):
+    global font
+    font = pygame.font.Font(None, 36)
+
+def main(screen, rect):
+    global time_passed, wave_offset
+    
+    # Update wave animation
+    time_passed += delta_time
+    wave_offset = (wave_offset + 120 * delta_time) % 360
+    
+    # Draw cyber background
+    pygame.draw.rect(screen, (0, 0, 0), rect)
+    
+    # Draw animated grid
+    grid_spacing = 30
+    for x in range(0, rect.width, grid_spacing):
+        alpha = max(0, min(255, int(128 + math.sin(time_passed + x * 0.05) * 64)))
+        pygame.draw.line(screen, (0, alpha, 0),
+                        (rect.left + x, rect.top),
+                        (rect.left + x, rect.bottom))
+    for y in range(0, rect.height, grid_spacing):
+        alpha = max(0, min(255, int(128 + math.sin(time_passed + y * 0.05) * 64)))
+        pygame.draw.line(screen, (0, alpha, 0),
+                        (rect.left, rect.top + y),
+                        (rect.right, rect.top + y))
+    
+    # Draw glowing text with wave effect
+    message = "Hello from PyOS"
+    for i, char in enumerate(message):
+        x_pos = rect.centerx - len(message) * 10 + i * 20
+        y_pos = rect.centery + math.sin((wave_offset + i * 20) * math.pi / 180) * 10
+        
+        # Draw glow effect
+        for size in range(3, 0, -1):
+            alpha = 128 if size == 1 else 64 // size
+            text = font.render(char, True, (0, alpha, 0))
+            text_rect = text.get_rect(center=(x_pos, y_pos))
+            screen.blit(text, text_rect)
+        
+        # Draw main text
+        text = font.render(char, True, (0, 255, 0))
+        text_rect = text.get_rect(center=(x_pos, y_pos))
+        screen.blit(text, text_rect)
