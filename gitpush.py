@@ -22,16 +22,17 @@ def main():
         print("[OK] successfully added files")
     else:
         print("[ERROR] failed to add files:")
-        print(output)
+        print(output.strip())
         return
 
-    # Commit changes
-    success, output = run_command(f'git commit -m "{commit_message}"')
+    # Commit changes - use double quotes for Windows compatibility
+    commit_cmd = 'git commit -m "\\"{}\\""'.format(commit_message)
+    success, output = run_command(commit_cmd)
     if success:
         print("[OK] successfully commited")
     else:
-        print("[ERROR] failed to commit:")
-        print(output)
+        print("[ERROR] failed to commit. Git output:")
+        print(output.strip() or "No output from git")
         return
 
     # Push changes
@@ -39,8 +40,8 @@ def main():
     if success:
         print("[OK] success. commit info:", output.strip())
     else:
-        print("[ERROR] failed to push:")
-        print(output)
+        print("[ERROR] failed to push. Git output:")
+        print(output.strip())
 
 if __name__ == "__main__":
     main()
