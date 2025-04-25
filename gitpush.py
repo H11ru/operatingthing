@@ -37,6 +37,10 @@ def main():
 
     # Push changes
     success, output = run_command("git push")
+    if not success and "no upstream branch" in output.lower():
+        print("[INFO] Setting upstream branch...")
+        success, output = run_command("git push --set-upstream origin master")
+    
     if success:
         print("[OK] success. commit info:", output.strip())
     else:
