@@ -144,11 +144,19 @@ class TextEditorWindow(Window):
             mouse_pos = pygame.mouse.get_pos()
             window_pos = (mouse_pos[0] - self.x, mouse_pos[1] - self.y)
             
+            # First check if window was clicked anywhere (for activation)
+            if 0 <= window_pos[0] <= self.width and 0 <= window_pos[1] <= self.height:
+                should_activate = True
+            
             # Check save button first
             if self.save_button.collidepoint(window_pos) and window_pos[1] < self.title_bar_height:
                 self.save_file()
                 return True
                 
+            # Check close button
+            if self.close_button.collidepoint(window_pos) and window_pos[1] < self.title_bar_height:
+                return False  # Tell window manager to remove this window
+
             # Let parent handle close button first
             if window_pos[1] < self.title_bar_height:
                 result = super().handle_event(event)
@@ -443,6 +451,11 @@ class TextEditorWindow(Window):
                     pygame.draw.line(self.surface, current_theme.editor_cursor,
                                    (cursor_x, y), (cursor_x, y + self.line_height), 2)
             y += self.line_height
+
+    def close(self):
+        print("I was closed.") # This print statement never printed..?
+        # Override close to ensure window is removed, not just deactivated
+        return False  # Tell window manager to remove this window
 
 class Desktop:
     def __init__(self, window_manager, app_manager):

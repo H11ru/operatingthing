@@ -1,0 +1,57 @@
+def init(rect):
+    global buttons, font
+    font = pygame.font.Font(None, 24)
+    buttons = []
+
+def main(screen, rect):
+    # Get windows from global WindowManager instance
+    # Since we can't access it directly, let's just draw what we can see
+    global buttons
+    
+    # Clear buttons
+    buttons = []
+    y = rect.y + 10
+    
+    # Draw background
+    pygame.draw.rect(screen, (40, 40, 40), rect)
+    
+    # Draw title
+    title = font.render("Task Manager", True, (255, 255, 255))
+    screen.blit(title, (rect.x + 10, y))
+    y += 30
+    
+    # Draw column headers
+    pygame.draw.line(screen, (100, 100, 100), (rect.x, y), (rect.x + rect.width, y))
+    headers = font.render("Window Title                    Status", True, (200, 200, 200))
+    screen.blit(headers, (rect.x + 10, y + 5))
+    y += 30
+    
+    # For each active window in the WindowManager...
+    # We'll get this list through the WindowManager later
+    sample_windows = [
+        ("Terminal - sample.py", "Running"),
+        ("Text Editor - notes.txt", "Running"),
+        ("PyOS App - paint.pya", "Running")
+    ]
+    
+    for title, status in sample_windows:
+        text = font.render(f"{title[:30]:<30} {status}", True, (255, 255, 255))
+        screen.blit(text, (rect.x + 10, y))
+        
+        # Add close button
+        close_rect = pygame.Rect(rect.x + rect.width - 60, y, 50, 20)
+        pygame.draw.rect(screen, (200, 50, 50), close_rect)
+        close_text = font.render("Close", True, (255, 255, 255))
+        screen.blit(close_text, (close_rect.x + 5, close_rect.y + 2))
+        buttons.append((close_rect, title))
+        
+        y += 25
+
+def handle_event(event):
+    global buttons
+    if event.type == pygame.MOUSEBUTTONDOWN:
+        for button, window_title in buttons:
+            if button.collidepoint(event.pos):
+                print(f"Would close: {window_title}")
+                return True
+    return False

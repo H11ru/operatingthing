@@ -93,6 +93,10 @@ class Window:
         # Base implementation - override in subclasses if needed
         self.active = False
 
+    def update(self):
+        # Base update method - override in subclasses if needed
+        pass
+
 class TerminalWindow(Window):
     def __init__(self, title, x, y, width, height):
         super().__init__(title, x, y, width, height)
@@ -181,6 +185,11 @@ class PyAppWindow(Window):
             'running': True,
             'delta_time': 0.0
         }
+        
+        # Get API from WindowManager
+        window_manager = self._get_window_manager()
+        if window_manager:
+            self.namespace['api'] = window_manager.create_api()
         
         try:
             # Execute the app code to define functions
@@ -315,10 +324,17 @@ class PyAppWindow(Window):
             print(f"Error in app main loop: {str(e)}")
             self.running = False
 
+    def _get_window_manager(self):
+        """Get WindowManager instance - implement this based on your architecture"""
+        # This needs to be implemented based on how you want to access the WindowManager
+        # Could be through a global, singleton, or passed in constructor
+        return None  # TODO: Implement actual access to WindowManager
+
 class WindowManager:
     def __init__(self, screen):
         self.screen = screen
         self.windows = []
+        self.windows_to_remove = []  # Add this to track windows that need removal
         
     def create_window(self, window):
         self.windows.append(window)
@@ -340,17 +356,34 @@ class WindowManager:
     def handle_event(self, event):
         # Handle events in reverse order (top to bottom)
         for window in reversed(self.windows):
-            if window.handle_event(event):
-                return True
+            result = window.handle_event(event)
+            if result is False:  # Window wants to close
+                print(f"Closing window: {window.title}")
+                self.windows_to_remove.append(window)
+            return True
         return False
         
     def update(self):
+        # Remove any windows marked for removal
+        for window in self.windows_to_remove:
+            if window in self.windows:
+                self.windows.remove(window)
+        self.windows_to_remove.clear()
+        
         # Update all windows
         for window in self.windows:
-            #window.update()
-            pass
+            window.update()
             
     def draw(self):
         # Draw all windows in order (bottom to top)
         for window in self.windows:
             window.draw(self.screen)
+
+    def create_api(self):
+        """Create API object with limited system calls for apps"""
+        return {
+            'spawn_window': self.create_window,
+            'close_window': lambda window: self.windows_to_remove.append(window),
+            'get_windows': lambda: self.windows.copy(),
+            'bring_to_front': self.bring_to_front
+        }
