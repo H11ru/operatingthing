@@ -57,23 +57,23 @@ class PyOS:
             self.clock.tick(60)
         self.screen.fill((0, 0, 0))  # Clear screen before quitting
         pygame.display.flip()
-        pygame.time.delay(1300)
+        pygame.time.delay(700)
         self.screen.fill((255, 255, 255))  # Clear screen before quitting
         pygame.display.flip()
-        pygame.time.delay(74)
+        pygame.time.delay(24)
         self.screen.fill((0,0,0))  # Clear screen before quitting
         pygame.display.flip()
-        pygame.time.delay(474)
+        pygame.time.delay(174)
         for i in range(15):
             self.screen.fill((255, 255, 255))  # Clear screen before quitting
             pygame.display.flip()
-            pygame.time.delay(6)
+            pygame.time.delay(1)
             self.screen.fill((0, 0, 0))
             pygame.display.flip()
-            pygame.time.delay(6)
+            pygame.time.delay(1)
         self.screen.fill((0,0,0))
         pygame.display.flip()
-        pygame.time.delay(300)
+        pygame.time.delay(100)
         pygame.quit()
 
 if __name__ == "__main__":
