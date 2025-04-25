@@ -62,13 +62,18 @@ class Window:
             
             # Check if clicking close button
             if self.close_button.collidepoint(window_pos) and window_pos[1] < self.title_bar_height:
-                print("Something shutdowned")
+                self.close()  # New method for proper closing
                 return False
             
-            # Check if clicking title bar
-            if window_pos[1] < self.title_bar_height:
+            # Create title bar rect for proper bounds checking
+            title_bar_rect = pygame.Rect(0, 0, self.width - self.close_button.width, self.title_bar_height)
+            if title_bar_rect.collidepoint(window_pos):
                 self.dragging = True
                 self.drag_offset = window_pos
+                return True
+            
+            # Window was clicked somewhere - activate it
+            if 0 <= window_pos[0] <= self.width and 0 <= window_pos[1] <= self.height:
                 return True
                 
         elif event.type == pygame.MOUSEBUTTONUP:
@@ -83,6 +88,10 @@ class Window:
             return True
             
         return True
+
+    def close(self):
+        # Base implementation - override in subclasses if needed
+        self.active = False
 
 class TerminalWindow(Window):
     def __init__(self, title, x, y, width, height):
@@ -198,15 +207,43 @@ class PyAppWindow(Window):
             
             # Check if clicking close button
             if self.close_button.collidepoint(window_pos) and window_pos[1] < self.title_bar_height:
-                self.namespace['running'] = False
-                self.running = False
+                self.close()
                 return False
             
-            # Check if clicking title bar
-            if window_pos[1] < self.title_bar_height:
+            # Create title bar rect for proper bounds checking
+            title_bar_rect = pygame.Rect(0, 0, self.width - self.close_button.width, self.title_bar_height)
+            if title_bar_rect.collidepoint(window_pos):
                 self.dragging = True
-                self.drag_offset = (window_pos[0], window_pos[1])
+                self.drag_offset = window_pos
                 return True
+            
+            # Rest of mouse handling for app content
+            # Create an adjusted event for the app's coordinate space
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+                if hasattr(event, 'pos'):
+                    rel_x = event.pos[0] - self.x - self.content_rect.x
+                    rel_y = event.pos[1] - self.y - self.content_rect.y
+                    if 0 <= rel_x < self.content_rect.width and 0 <= rel_y < self.content_rect.height:
+                        event_dict = {'pos': (rel_x, rel_y)}
+                        if event.type == pygame.MOUSEMOTION:
+                            event_dict['rel'] = event.rel
+                            event_dict['buttons'] = event.buttons
+                        else:
+                            event_dict['button'] = event.button
+                        adj_event = pygame.event.Event(event.type, event_dict)
+                        # Forward event to app if it has an event handler
+                        if 'handle_event' in self.namespace:
+                            try:
+                                self.namespace['handle_event'](adj_event)
+                            except Exception as e:
+                                print(f"Error in app event handler: {str(e)}")
+            elif event.type == pygame.KEYDOWN:
+                # Forward keyboard events to app if it has an event handler
+                if 'handle_event' in self.namespace:
+                    try:
+                        self.namespace['handle_event'](event)
+                    except Exception as e:
+                        print(f"Error in app event handler: {str(e)}")
         
         elif event.type == pygame.MOUSEBUTTONUP:
             self.dragging = False
@@ -216,35 +253,13 @@ class PyAppWindow(Window):
             self.x = mouse_pos[0] - self.drag_offset[0]
             self.y = mouse_pos[1] - self.drag_offset[1]
             return True
-            
-        # Create an adjusted event for the app's coordinate space
-        if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
-            if hasattr(event, 'pos'):
-                rel_x = event.pos[0] - self.x - self.content_rect.x
-                rel_y = event.pos[1] - self.y - self.content_rect.y
-                if 0 <= rel_x < self.content_rect.width and 0 <= rel_y < self.content_rect.height:
-                    event_dict = {'pos': (rel_x, rel_y)}
-                    if event.type == pygame.MOUSEMOTION:
-                        event_dict['rel'] = event.rel
-                        event_dict['buttons'] = event.buttons
-                    else:
-                        event_dict['button'] = event.button
-                    adj_event = pygame.event.Event(event.type, event_dict)
-                    # Forward event to app if it has an event handler
-                    if 'handle_event' in self.namespace:
-                        try:
-                            self.namespace['handle_event'](adj_event)
-                        except Exception as e:
-                            print(f"Error in app event handler: {str(e)}")
-        elif event.type == pygame.KEYDOWN:
-            # Forward keyboard events to app if it has an event handler
-            if 'handle_event' in self.namespace:
-                try:
-                    self.namespace['handle_event'](event)
-                except Exception as e:
-                    print(f"Error in app event handler: {str(e)}")
         
         return True
+
+    def close(self):
+        self.namespace['running'] = False
+        self.running = False
+        self.active = False
 
     def draw(self, screen):
         if not self.running:
