@@ -37,9 +37,9 @@ class Window:
         # Draw close button
         pygame.draw.rect(self.surface, (255, 0, 0), self.close_button)
         pygame.draw.line(self.surface, current_theme.text, 
-                        (self.width - 20, 5), (self.width - 5, 20), 2)
+                        (self.width - 22, 5), (self.width - 7, 20), 2)  # Moved 2px left
         pygame.draw.line(self.surface, current_theme.text, 
-                        (self.width - 5, 5), (self.width - 20, 20), 2)
+                        (self.width - 7, 5), (self.width - 22, 20), 2)  # Moved 2px left
         
         # Draw window content
         self.draw_content()
@@ -303,9 +303,9 @@ class PyAppWindow(Window):
             # Draw close button
             pygame.draw.rect(self.surface, (255, 0, 0), self.close_button)
             pygame.draw.line(self.surface, current_theme.text, 
-                           (self.width - 20, 5), (self.width - 5, 20), 2)
+                           (self.width - 22, 5), (self.width - 7, 20), 2)  # Moved 2px left
             pygame.draw.line(self.surface, current_theme.text, 
-                           (self.width - 5, 5), (self.width - 20, 20), 2)
+                           (self.width - 7, 5), (self.width - 22, 20), 2)  # Moved 2px left
             
             # Draw window border
             border_color = current_theme.window_border_active if self.active else current_theme.window_border_inactive
@@ -341,6 +341,8 @@ class WindowManager:
         self.screen = screen
         self.windows = []
         self.windows_to_remove = []  # Add this to track windows that need removal
+        self.last_frame_time = time.time()
+        self.frame_times = []  # Store last 60 frame times
         
     def create_window(self, window):
         self.windows.append(window)
@@ -370,6 +372,15 @@ class WindowManager:
         return False
         
     def update(self):
+        # Update FPS calculation
+        current_time = time.time()
+        delta = current_time - self.last_frame_time
+        self.last_frame_time = current_time
+        
+        self.frame_times.append(delta)
+        if len(self.frame_times) > 60:
+            self.frame_times.pop(0)
+            
         # Remove any windows marked for removal
         for window in self.windows_to_remove:
             if window in self.windows:
@@ -399,15 +410,22 @@ class WindowManager:
     def get_performance(self):  # Rename to match API
         """Get system performance metrics"""
         try:
+            # Calculate average FPS from frame times
+            if self.frame_times:
+                avg_frame_time = sum(self.frame_times) / len(self.frame_times)
+                current_fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
+            else:
+                current_fps = 0
+                
             metrics = {
                 'cpu': psutil.cpu_percent(interval=0.1),
                 'memory': psutil.virtual_memory().percent,
                 'window_count': len(self.windows),
-                'fps': 0  # Default to 0 since we don't track FPS globally
+                'fps': int(current_fps)
             }
             return metrics
         except Exception as e:
-            print(f"System metrics error: {str(e)}")
+            print(f"Error getting metrics: {e}")
             return {
                 'cpu': 0,
                 'memory': 0,

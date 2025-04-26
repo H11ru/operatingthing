@@ -13,37 +13,27 @@ def init(rect):
             break
 
 def main(screen, rect):
-    global buttons, last_metrics, last_perf_update
+    global buttons, last_metrics, self_window
     buttons = []
     current_time = pygame.time.get_ticks()
     
-    # Update performance metrics every 1000ms (1 second)
-    if current_time - last_perf_update > 1000:
-        try:
-            metrics = api.get_performance()
-            if metrics:
-                last_metrics = metrics
-            last_perf_update = current_time
-        except Exception as e:
-            print(f"Error getting metrics: {str(e)}")
-
-    # Use cached metrics for display
-    metrics = last_metrics
-    y = rect.y + 10
+    # Update performance metrics every 100ms (10 times per second)
+    if current_time - last_perf_update > 100:
+        metrics = api.get_performance()
+        if metrics:
+            last_metrics = metrics
+        last_perf_update = current_time
     
     # Draw background
     pygame.draw.rect(screen, (40, 40, 40), rect)
     
-    # Draw performance section
-    title = font.render("System Performance", True, (255, 255, 255))
-    screen.blit(title, (rect.x + 10, y))
-    y += 30
-    
+    # Draw metrics section with live FPS
+    y = rect.y + 10
     perf_texts = [
-        f"CPU Usage: {metrics['cpu']:.1f}%",
-        f"Memory Usage: {metrics['memory']:.1f}%",
-        f"Active Windows: {metrics['window_count']}",
-        f"FPS: {int(metrics['fps'])}"
+        f"FPS: {last_metrics['fps']}",
+        f"CPU: {last_metrics['cpu']:.1f}%",
+        f"Memory: {last_metrics['memory']:.1f}%",
+        f"Windows: {last_metrics['window_count']}"
     ]
     
     for text in perf_texts:
@@ -84,7 +74,9 @@ def handle_event(event):
         if event.type == pygame.MOUSEBUTTONDOWN:
             for button, window in buttons:
                 if button.collidepoint(event.pos):
-                    api.terminate_window(window, self_window)  # Use proper termination
+                    # Don't allow task manager to kill itself
+                    if window != self_window:
+                        api.terminate_window(window, self_window)
                     return True
     except Exception as e:
         print(f"Task Manager Error: {str(e)}")
