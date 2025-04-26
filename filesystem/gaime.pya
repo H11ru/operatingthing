@@ -1,3 +1,5 @@
+# a basic PyOS app
+
 import json
 import os
 
@@ -100,7 +102,14 @@ def init(rect):
     
     # Initialize map_data if it hasn't been loaded
     if map_data is None:
-        map_data = [[TILE_AIR if y < 30 else TILE_DIRT for y in range(MAP_HEIGHT)] for x in range(MAP_WIDTH)]
+        map_data = [[TILE_AIR for _ in range(MAP_HEIGHT)] for _ in range(MAP_WIDTH)]
+        # Generate terrain - dirt above stone
+        for x in range(MAP_WIDTH):
+            for y in range(MAP_HEIGHT):
+                if y >= 30 and y < 50:  # Dirt layer from y=30 to y=50
+                    map_data[x][y] = TILE_DIRT
+                elif y >= 50:  # Stone layer below y=50
+                    map_data[x][y] = TILE_STONE
     load_game_data()
 
 def check_collision(x, y, w, h):
@@ -113,7 +122,8 @@ def check_collision(x, y, w, h):
     for tx in range(tile_x1, tile_x2 + 1):
         for ty in range(tile_y1, tile_y2 + 1):
             if 0 <= tx < MAP_WIDTH and 0 <= ty < MAP_HEIGHT:
-                if map_data[tx][ty] == TILE_DIRT:  # Only solid tiles block movement
+                tile_type = map_data[tx][ty]
+                if tile_type == TILE_DIRT or tile_type == TILE_STONE:
                     return True
     return False
 
@@ -123,7 +133,8 @@ def try_mine_tile(x, y):
     if dirt_inventory >= DIRT_CAPACITY:
         return False
     if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
-        if map_data[x][y] == TILE_DIRT and key not in mining_targets:
+        tile_type = map_data[x][y]
+        if (tile_type == TILE_DIRT or tile_type == TILE_STONE) and key not in mining_targets:
             # Snap player to grid first
             start_x = (player_pos[0] // TILE_SIZE) * TILE_SIZE + TILE_SIZE/2 - PLAYER_SIZE/2
             start_y = (player_pos[1] // TILE_SIZE) * TILE_SIZE + TILE_SIZE/2 - PLAYER_SIZE/2
@@ -138,8 +149,9 @@ def try_mine_tile(x, y):
             elif last_wall_direction == 'down':
                 target_x = start_x
                 target_y = (y * TILE_SIZE) + TILE_SIZE/2 - PLAYER_SIZE/2
-                
+            
             mining_targets[key] = MiningTarget(x, y, target_x, target_y, last_wall_direction)
+            mining_targets[key].mine_time = STONE_MINE_TIME if tile_type == TILE_STONE else DIRT_MINE_TIME
             # Instantly snap to grid
             player_pos[0] = start_x
             player_pos[1] = start_y
@@ -151,21 +163,21 @@ def update_mining(delta_time):
     completed = []
     
     for key, target in mining_targets.items():
-        target.progress += delta_time / MINE_SPEED
+        mine_time = target.mine_time
+        target.progress += delta_time / mine_time
         
         # Lerp player position
-        lerp_factor = min(1.0, target.progress * 1)  # Move twice as fast as mining progress
+        lerp_factor = min(1.0, target.progress * 1)
         player_pos[0] = target.player_start_x + (target.player_target_x - target.player_start_x) * lerp_factor
         player_pos[1] = target.player_start_y + (target.player_target_y - target.player_start_y) * lerp_factor
-        # camera slide
-        
         
         # Reset velocity while mining
         player_vel[0] = 0
         player_vel[1] = 0
         
         if target.progress >= 1.0:
-            map_data[target.x][target.y] = TILE_CAVE
+            tile_type = map_data[target.x][target.y]
+            map_data[target.x][target.y] = TILE_CAVE2 if tile_type == TILE_STONE else TILE_CAVE
             completed.append(key)
     
     for key in completed:
@@ -228,8 +240,16 @@ def draw_grid(offscreen_surface):
                                    pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
                     pygame.draw.rect(offscreen_surface, (80, 40, 11),
                                    pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_STONE:
+                    pygame.draw.rect(offscreen_surface, (128, 128, 128),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (90, 90, 90),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
                 elif tile_type == TILE_CAVE:
                     pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                elif tile_type == TILE_CAVE2:
+                    pygame.draw.rect(offscreen_surface, (30, 30, 35),
                                    pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
                 elif tile_type == TILE_AIR:
                     pygame.draw.rect(offscreen_surface, (0, 0, 255),
@@ -244,15 +264,19 @@ def draw_grid(offscreen_surface):
             
             size = int(TILE_SIZE * target.progress)
             if size > 0:
+                # Get the target tile type to determine mining animation color
+                tile_type = map_data[x][y]
+                overlay_color = (30, 30, 35) if tile_type == TILE_STONE else (40, 20, 5)
+                
                 # Use target's stored direction instead of global
                 if target.direction == 'left':
-                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                    pygame.draw.rect(offscreen_surface, overlay_color,
                                   pygame.Rect(screen_x + TILE_SIZE - size, screen_y, size, TILE_SIZE))
                 elif target.direction == 'right':
-                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                    pygame.draw.rect(offscreen_surface, overlay_color,
                                   pygame.Rect(screen_x, screen_y, size, TILE_SIZE))
                 elif target.direction == 'down':
-                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                    pygame.draw.rect(offscreen_surface, overlay_color,
                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, size))
 
 def draw_player(offscreen_surface):
