@@ -16,13 +16,20 @@ player_pos = [50.0 * TILE_SIZE, 29.0 * TILE_SIZE]  # Pixel-based position
 player_vel = [0.0, 0.0]  # Velocity vector
 camera_pos = [0.0, 0.0]
 
+# Tile types
 TILE_AIR = 0
 TILE_DIRT = 1
-TILE_CAVE = 2  # New cave air tile type
+TILE_CAVE = 2  # Cave air from dirt mining
+TILE_STONE = 3  # New stone tile type
+TILE_CAVE2 = 4  # Cave air from stone mining
+
 PLAYER_COLOR = (0, 255, 0)
 wall_contact_timer = 0  # Timer for wall contact
 last_wall_direction = None  # Track which wall we're touching
 
+# Mining settings
+DIRT_MINE_TIME = 0.5  # Time to mine dirt in seconds
+STONE_MINE_TIME = 1.5  # Time to mine stone in seconds
 DIRT_CAPACITY = 10
 DIRT_CLEAR_FRAMES = 3  # Every 3 frames clear 1 dirt when in air
 dirt_inventory = 0
