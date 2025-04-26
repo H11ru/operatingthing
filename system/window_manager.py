@@ -210,7 +210,8 @@ class PyAppWindow(Window):
             if 'init' in self.namespace:
                 self.namespace['init'](self.content_rect)
         except Exception as e:
-            print(f"Error initializing PyOS App: {str(e)}")
+            print(f"Error initializing PyOS App: ")
+            __import__('traceback').print_exc()
             self.running = False
     
     def handle_event(self, event):
@@ -253,14 +254,18 @@ class PyAppWindow(Window):
                             try:
                                 self.namespace['handle_event'](adj_event)
                             except Exception as e:
-                                print(f"Error in app event handler: {str(e)}")
+                                #print(f"Error in app event handler: {str(e)}")
+                                print(f"Error in app event handler:")
+                                __import__('traceback').print_exc()
             elif event.type == pygame.KEYDOWN:
                 # Forward keyboard events to app if it has an event handler
                 if 'handle_event' in self.namespace:
                     try:
                         self.namespace['handle_event'](event)
                     except Exception as e:
-                        print(f"Error in app event handler: {str(e)}")
+                        #print(f"Error in app event handler: {str(e)}")
+                        print(f"Error in app event handler:")
+                        __import__('traceback').print_exc()
         
         elif event.type == pygame.MOUSEBUTTONUP:
             self.dragging = False
@@ -330,7 +335,9 @@ class PyAppWindow(Window):
             self.clock.tick(60)
             
         except Exception as e:
-            print(f"Error in app main loop: {str(e)}")
+            #print(f"Error in app main loop: {str(e)}")
+            print(f"Error in app main loop:")
+            __import__('traceback').print_exc()
             self.running = False
 
     def _get_window_manager(self):

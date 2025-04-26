@@ -1,2 +1,4 @@
 venv
 gaime_save.json
+__pycache__
+*.pyc

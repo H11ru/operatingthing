@@ -36,7 +36,7 @@ map_data = None
 
 # Mining animation data
 class MiningTarget:
-    def __init__(self, x, y, player_target_x, player_target_y):
+    def __init__(self, x, y, player_target_x, player_target_y, direction):
         self.x = x
         self.y = y
         self.progress = 0.0  # 0.0 to 1.0
@@ -47,6 +47,7 @@ class MiningTarget:
         self.player_start_y = (current_tile_y * TILE_SIZE) + (TILE_SIZE - PLAYER_SIZE) / 2
         self.player_target_x = player_target_x
         self.player_target_y = player_target_y
+        self.direction = direction  # Store mining direction with target
         
 mining_targets = {}  # (x,y) -> MiningTarget
 MINE_SPEED = 1.0  # Time in seconds to mine a block
@@ -131,7 +132,7 @@ def try_mine_tile(x, y):
                 target_x = start_x
                 target_y = (y * TILE_SIZE) + TILE_SIZE/2 - PLAYER_SIZE/2
                 
-            mining_targets[key] = MiningTarget(x, y, target_x, target_y)
+            mining_targets[key] = MiningTarget(x, y, target_x, target_y, last_wall_direction)
             # Instantly snap to grid
             player_pos[0] = start_x
             player_pos[1] = start_y
@@ -207,39 +208,45 @@ def draw_grid(offscreen_surface):
     view_width = min(offscreen_surface.get_width() // TILE_SIZE + 2, MAP_WIDTH - view_x)
     view_height = min(offscreen_surface.get_height() // TILE_SIZE + 2, MAP_HEIGHT - view_y)
     
-    for x in range(view_x, view_x + view_width):
-        for y in range(view_y, view_y + view_height):
+    # First pass: Draw base tiles
+    for x in range(view_x, min(view_x + view_width, MAP_WIDTH)):
+        for y in range(view_y, min(view_y + view_height, MAP_HEIGHT)):
+            if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
+                screen_x = int(x * TILE_SIZE - camera_pos[0])
+                screen_y = int(y * TILE_SIZE - camera_pos[1])
+                
+                tile_type = map_data[x][y]
+                if tile_type == TILE_DIRT:
+                    pygame.draw.rect(offscreen_surface, (139, 69, 19),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (80, 40, 11),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_CAVE:
+                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                elif tile_type == TILE_AIR:
+                    pygame.draw.rect(offscreen_surface, (0, 0, 255),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+    
+    # Second pass: Draw mining overlays
+    for key, target in mining_targets.items():
+        x, y = key
+        if view_x <= x < view_x + view_width and view_y <= y < view_y + view_height:
             screen_x = int(x * TILE_SIZE - camera_pos[0])
             screen_y = int(y * TILE_SIZE - camera_pos[1])
             
-            if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
-                tile_type = map_data[x][y]
-                key = (x, y)
-                
-                if key in mining_targets:
-                    # Draw dirt background
-                    pygame.draw.rect(offscreen_surface, (139, 69, 19),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    # Draw mining progress overlay
-                    progress = mining_targets[key].progress
-                    size = int(TILE_SIZE * progress)
-                    offset = (TILE_SIZE - size) // 2
-                    if size > 0:
-                        pygame.draw.rect(offscreen_surface, (40, 20, 5),
-                                       pygame.Rect(screen_x + offset, screen_y + offset, size, size))
-                    pygame.draw.rect(offscreen_surface, (80, 40, 11),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_DIRT:  # Dirt tile
-                    pygame.draw.rect(offscreen_surface, (139, 69, 19),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (80, 40, 11),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_CAVE:  # Cave air (darker)
+            size = int(TILE_SIZE * target.progress)
+            if size > 0:
+                # Use target's stored direction instead of global
+                if target.direction == 'left':
                     pygame.draw.rect(offscreen_surface, (40, 20, 5),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                elif tile_type == TILE_AIR:  # Sky air
-                    pygame.draw.rect(offscreen_surface, (0, 0, 255),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                                  pygame.Rect(screen_x + TILE_SIZE - size, screen_y, size, TILE_SIZE))
+                elif target.direction == 'right':
+                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                                  pygame.Rect(screen_x, screen_y, size, TILE_SIZE))
+                elif target.direction == 'down':
+                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                                  pygame.Rect(screen_x, screen_y, TILE_SIZE, size))
 
 def draw_player(offscreen_surface):
     screen_x = int(player_pos[0] - camera_pos[0])
