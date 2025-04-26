@@ -512,7 +512,8 @@ class Desktop:
         elif file_type == "pya":
             app_code = self.app_manager.execute_file(filename)
             if isinstance(app_code, str):  # If we got the app code
-                app_window = PyAppWindow(f"PyOS App - {filename}", 100, 100, 800, 600, app_code)
+                app_window = PyAppWindow(f"PyOS App - {filename}", 100, 100, 800, 600, 
+                                      app_code, self.window_manager)
                 self.window_manager.create_window(app_window)
         else:
             content = self.app_manager.get_file_content(filename)

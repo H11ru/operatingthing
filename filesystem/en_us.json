@@ -1,0 +1,31 @@
+{
+  "advancements.donate.title": "First Donation",
+  "advancements.donate.descr": "Donate something",
+  
+  "advancements.donate_2.title": "Nice Donation",
+  "advancements.donate_2.descr": "Donate a nice donation",
+  
+  "advancements.donate_3.title": "Big Donation",
+  "advancements.donate_3.descr": "Big donation",
+  
+  "advancements.donate_4.title": "Massive Donation",
+  "advancements.donate_4.descr": "MASSIVE donation",
+  
+  "advancements.donate_5.title": "Regular Supporter",
+  "advancements.donate_5.descr": "Donate a total of 500",
+  
+  "advancements.donate_6.title": "Great Supporter",
+  "advancements.donate_6.descr": "Donate a total of 2000",
+  
+  "advancements.donate_7.title": "Amazing Supporter",
+  "advancements.donate_7.descr": "Donate a total of 5000",
+  
+  "advancements.donate_8.title": "Incredible Supporter",
+  "advancements.donate_8.descr": "Donate a total of 10000",
+  
+  "advancements.donate_9.title": "Legendary Supporter",
+  "advancements.donate_9.descr": "Donate a total of 50000",
+  
+  "advancements.donate_10.title": "Divine Supporter",
+  "advancements.donate_10.descr": "Donate a total of 100000"
+}

@@ -5,6 +5,7 @@ from multiprocessing import Process, Queue
 from queue import Empty
 import time
 from .theme import current_theme
+import psutil  # Add at top with other imports
 
 class Window:
     def __init__(self, title, x, y, width, height):
@@ -168,7 +169,7 @@ class TerminalWindow(Window):
             self.add_output(self.output_queue.get_nowait())
 
 class PyAppWindow(Window):
-    def __init__(self, title, x, y, width, height, app_code):
+    def __init__(self, title, x, y, width, height, app_code, window_manager):  # Add window_manager param
         super().__init__(title, x, y, width, height)
         self.app_code = app_code
         self.running = True
@@ -177,26 +178,33 @@ class PyAppWindow(Window):
         self.clock = pygame.time.Clock()
         self.last_update = pygame.time.get_ticks()
         
+        # Store window manager reference
+        self.window_manager = window_manager
+        
         # Create namespace for the app
         self.namespace = {
             'pygame': pygame,
+            'psutil': psutil,  # Add psutil to namespace
+            'random': __import__('random'),
+            'math': __import__('math'),
+            'time': __import__('time'),
+            'sys': sys,
+            'io': io,
+            'os': __import__('os'),
             '__name__': '__main__',
             '__builtins__': __builtins__,
             'running': True,
-            'delta_time': 0.0
+            'delta_time': 0.0,
+            'api': window_manager,  # Pass the actual window manager instance
+            'is_taskmanager': 'tskmngr.pya' in title.lower()  # Special flag for task manager
         }
-        
-        # Get API from WindowManager
-        window_manager = self._get_window_manager()
-        if window_manager:
-            self.namespace['api'] = window_manager.create_api()
         
         try:
             # Execute the app code to define functions
             exec(self.app_code, self.namespace)
             
             if 'main' not in self.namespace:
-                raise Exception("PyOS App must define a main(screen, rect) function")
+                raise Exception("PyOS App must define a main(screen, recSt) function")
                 
             # Initialize any state the app needs
             if 'init' in self.namespace:
@@ -266,7 +274,8 @@ class PyAppWindow(Window):
         return True
 
     def close(self):
-        self.namespace['running'] = False
+        if 'close' in self.namespace:
+            self.namespace['close']()
         self.running = False
         self.active = False
 
@@ -325,10 +334,7 @@ class PyAppWindow(Window):
             self.running = False
 
     def _get_window_manager(self):
-        """Get WindowManager instance - implement this based on your architecture"""
-        # This needs to be implemented based on how you want to access the WindowManager
-        # Could be through a global, singleton, or passed in constructor
-        return None  # TODO: Implement actual access to WindowManager
+        return self.window_manager
 
 class WindowManager:
     def __init__(self, screen):
@@ -384,6 +390,35 @@ class WindowManager:
         return {
             'spawn_window': self.create_window,
             'close_window': lambda window: self.windows_to_remove.append(window),
-            'get_windows': lambda: self.windows.copy(),
-            'bring_to_front': self.bring_to_front
+            'windows': self.windows,  # Direct access to windows list
+            'bring_to_front': self.bring_to_front,
+            'get_performance': self.get_performance,  # Match the method name
+            'terminate_window': self.terminate_window
         }
+    
+    def get_performance(self):  # Rename to match API
+        """Get system performance metrics"""
+        try:
+            metrics = {
+                'cpu': psutil.cpu_percent(interval=0.1),
+                'memory': psutil.virtual_memory().percent,
+                'window_count': len(self.windows),
+                'fps': 0  # Default to 0 since we don't track FPS globally
+            }
+            return metrics
+        except Exception as e:
+            print(f"System metrics error: {str(e)}")
+            return {
+                'cpu': 0,
+                'memory': 0,
+                'window_count': len(self.windows),
+                'fps': 0
+            }
+
+    def terminate_window(self, window, caller_window=None):
+        """Special method for terminating windows with proper permissions"""
+        if caller_window and 'tskmngr.pya' in caller_window.title.lower():
+            # Task Manager can terminate any window, including itself
+            self.windows_to_remove.append(window)
+            return True
+        return False

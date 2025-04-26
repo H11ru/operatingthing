@@ -1,57 +1,91 @@
 def init(rect):
-    global buttons, font
+    global buttons, font, last_metrics, self_window, last_perf_update
     font = pygame.font.Font(None, 24)
     buttons = []
+    last_metrics = {'cpu': 0, 'memory': 0, 'window_count': 0, 'fps': 0}
+    last_perf_update = 0
+    self_window = None
+    
+    # Store reference to our own window
+    for window in api.windows:  # Changed from get_windows()
+        if window.title.startswith("PyOS App - tskmngr"):
+            self_window = window
+            break
 
 def main(screen, rect):
-    # Get windows from global WindowManager instance
-    # Since we can't access it directly, let's just draw what we can see
-    global buttons
-    
-    # Clear buttons
+    global buttons, last_metrics, last_perf_update
     buttons = []
+    current_time = pygame.time.get_ticks()
+    
+    # Update performance metrics every 1000ms (1 second)
+    if current_time - last_perf_update > 1000:
+        try:
+            metrics = api.get_performance()
+            if metrics:
+                last_metrics = metrics
+            last_perf_update = current_time
+        except Exception as e:
+            print(f"Error getting metrics: {str(e)}")
+
+    # Use cached metrics for display
+    metrics = last_metrics
     y = rect.y + 10
     
     # Draw background
     pygame.draw.rect(screen, (40, 40, 40), rect)
     
-    # Draw title
-    title = font.render("Task Manager", True, (255, 255, 255))
+    # Draw performance section
+    title = font.render("System Performance", True, (255, 255, 255))
     screen.blit(title, (rect.x + 10, y))
     y += 30
     
-    # Draw column headers
+    perf_texts = [
+        f"CPU Usage: {metrics['cpu']:.1f}%",
+        f"Memory Usage: {metrics['memory']:.1f}%",
+        f"Active Windows: {metrics['window_count']}",
+        f"FPS: {int(metrics['fps'])}"
+    ]
+    
+    for text in perf_texts:
+        surface = font.render(text, True, (200, 200, 200))
+        screen.blit(surface, (rect.x + 20, y))
+        y += 25
+    
+    y += 20
+    # Draw window list section
     pygame.draw.line(screen, (100, 100, 100), (rect.x, y), (rect.x + rect.width, y))
-    headers = font.render("Window Title                    Status", True, (200, 200, 200))
+    headers = font.render("Active Windows", True, (255, 255, 255))
     screen.blit(headers, (rect.x + 10, y + 5))
     y += 30
     
-    # For each active window in the WindowManager...
-    # We'll get this list through the WindowManager later
-    sample_windows = [
-        ("Terminal - sample.py", "Running"),
-        ("Text Editor - notes.txt", "Running"),
-        ("PyOS App - paint.pya", "Running")
-    ]
-    
-    for title, status in sample_windows:
-        text = font.render(f"{title[:30]:<30} {status}", True, (255, 255, 255))
-        screen.blit(text, (rect.x + 10, y))
+    # List all windows
+    try:
+        windows = api.windows  # Changed from get_windows()
+    except Exception as e:
+        windows = []
+        print(f"Error getting windows: {str(e)}")
+        
+    for window in windows:
+        text = font.render(f"{window.title}", True, (255, 255, 255))
+        screen.blit(text, (rect.x + 20, y))
         
         # Add close button
         close_rect = pygame.Rect(rect.x + rect.width - 60, y, 50, 20)
         pygame.draw.rect(screen, (200, 50, 50), close_rect)
         close_text = font.render("Close", True, (255, 255, 255))
         screen.blit(close_text, (close_rect.x + 5, close_rect.y + 2))
-        buttons.append((close_rect, title))
+        buttons.append((close_rect, window))
         
         y += 25
 
 def handle_event(event):
-    global buttons
-    if event.type == pygame.MOUSEBUTTONDOWN:
-        for button, window_title in buttons:
-            if button.collidepoint(event.pos):
-                print(f"Would close: {window_title}")
-                return True
+    try:
+        global buttons, self_window
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            for button, window in buttons:
+                if button.collidepoint(event.pos):
+                    api.terminate_window(window, self_window)  # Use proper termination
+                    return True
+    except Exception as e:
+        print(f"Task Manager Error: {str(e)}")
     return False

@@ -1,0 +1,385 @@
+import json
+import os
+
+# Constants
+MAP_WIDTH = 1000
+MAP_HEIGHT = 100
+TILE_SIZE = 16  # Increased from 10
+PLAYER_SIZE = 12  # Smaller than tile size for better collision
+PLAYER_COLOR = (0, 255, 0)
+GRAVITY = 400.0  # Pixels per second squared
+THRUST = 600.0  # Upward acceleration
+MOVE_SPEED = 200.0  # Horizontal movement speed
+FRICTION = 800.0  # Friction deceleration rate
+ZOOM = 2.0  # Camera zoom factor (2x zoom)
+player_pos = [50.0 * TILE_SIZE, 29.0 * TILE_SIZE]  # Pixel-based position
+player_vel = [0.0, 0.0]  # Velocity vector
+camera_pos = [0.0, 0.0]
+
+TILE_AIR = 0
+TILE_DIRT = 1
+TILE_CAVE = 2  # New cave air tile type
+PLAYER_COLOR = (0, 255, 0)
+wall_contact_timer = 0  # Timer for wall contact
+last_wall_direction = None  # Track which wall we're touching
+
+DIRT_CAPACITY = 10
+DIRT_CLEAR_FRAMES = 3  # Every 3 frames clear 1 dirt when in air
+dirt_inventory = 0
+dirt_clear_counter = 0
+
+# Data persistence
+SAVE_PATH = os.path.join("filesystem", "gaime_save.json")
+
+# Global map data (static map for simplicity)
+map_data = None
+
+# Mining animation data
+class MiningTarget:
+    def __init__(self, x, y, player_target_x, player_target_y):
+        self.x = x
+        self.y = y
+        self.progress = 0.0  # 0.0 to 1.0
+        self.player_start_x = player_pos[0]  # Store initial player position
+        self.player_start_y = player_pos[1]
+        self.player_target_x = player_target_x  # Target position for player
+        self.player_target_y = player_target_y
+        
+mining_targets = {}  # (x,y) -> MiningTarget
+MINE_SPEED = 1.0  # Time in seconds to mine a block
+
+def load_game_data():
+    global dirt_inventory, map_data
+    try:
+        if os.path.exists(SAVE_PATH):
+            with open(SAVE_PATH, 'r') as f:
+                data = json.load(f)
+                dirt_inventory = data.get('dirt', 0)
+                # Load world state if it exists
+                if 'world' in data:
+                    for y in range(MAP_HEIGHT):
+                        for x in range(MAP_WIDTH):
+                            map_data[x][y] = data['world'][y][x]
+    except Exception as e:
+        print(f"Error loading game data: {e}")
+        # Initialize new world if load fails
+        map_data = [[TILE_AIR if y < 30 else TILE_DIRT for y in range(MAP_HEIGHT)] for x in range(MAP_WIDTH)]
+
+def save_game_data():
+    try:
+        # Convert world data to 2D list for JSON serialization
+        world_data = [[map_data[x][y] for x in range(MAP_WIDTH)] for y in range(MAP_HEIGHT)]
+        save_data = {
+            'dirt': dirt_inventory,
+            'world': world_data,
+            'version': 1  # For future compatibility
+        }
+        with open(SAVE_PATH, 'w') as f:
+            json.dump(save_data, f)
+    except Exception as e:
+        print(f"Error saving game data: {e}")
+
+def init(rect):
+    global player_pos, camera_pos, player_vel, wall_contact_timer, last_wall_direction, map_data
+    player_pos = [50.0 * TILE_SIZE, 29.0 * TILE_SIZE]
+    player_vel = [0.0, 0.0]
+    camera_pos = [player_pos[0] - rect.width//2, player_pos[1] - rect.height//2]
+    wall_contact_timer = 0
+    last_wall_direction = None
+    
+    # Initialize map_data if it hasn't been loaded
+    if map_data is None:
+        map_data = [[TILE_AIR if y < 30 else TILE_DIRT for y in range(MAP_HEIGHT)] for x in range(MAP_WIDTH)]
+    load_game_data()
+
+def check_collision(x, y, w, h):
+    # Convert pixel coordinates to tile coordinates
+    tile_x1 = int(x // TILE_SIZE)
+    tile_x2 = int((x + w - 1) // TILE_SIZE)
+    tile_y1 = int(y // TILE_SIZE)
+    tile_y2 = int((y + h - 1) // TILE_SIZE)
+    
+    for tx in range(tile_x1, tile_x2 + 1):
+        for ty in range(tile_y1, tile_y2 + 1):
+            if 0 <= tx < MAP_WIDTH and 0 <= ty < MAP_HEIGHT:
+                if map_data[tx][ty] == TILE_DIRT:  # Only solid tiles block movement
+                    return True
+    return False
+
+def try_mine_tile(x, y):
+    global mining_targets, dirt_inventory
+    key = (x, y)
+    if dirt_inventory >= DIRT_CAPACITY:
+        #print("Dirt inventory full!")
+        pass
+        return False
+    if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
+        if map_data[x][y] == TILE_DIRT and key not in mining_targets:
+            # Calculate target position with 2x distance
+            player_target_x = player_pos[0]
+            player_target_y = player_pos[1]
+            
+            # Adjust target position based on mining direction with 2x distance
+            if last_wall_direction == 'left':
+                player_target_x = player_pos[0] - TILE_SIZE  # Move left
+            elif last_wall_direction == 'right':
+                player_target_x = player_pos[0] + TILE_SIZE  # Move right
+            elif last_wall_direction == 'down':
+                player_target_y = player_pos[1] + TILE_SIZE  # Move down
+                
+            mining_targets[key] = MiningTarget(x, y, player_target_x, player_target_y)
+            return True
+    return False
+
+def update_mining(delta_time):
+    global mining_targets, map_data, player_pos, player_vel, dirt_inventory
+    completed = []
+    
+    for key, target in mining_targets.items():
+        target.progress += delta_time / MINE_SPEED
+        
+        # Lerp player position
+        lerp_factor = min(1.0, target.progress * 1)  # Move twice as fast as mining progress
+        player_pos[0] = target.player_start_x + (target.player_target_x - target.player_start_x) * lerp_factor
+        player_pos[1] = target.player_start_y + (target.player_target_y - target.player_start_y) * lerp_factor
+        # camera slide
+        
+        
+        # Reset velocity while mining
+        player_vel[0] = 0
+        player_vel[1] = 0
+        
+        if target.progress >= 1.0:
+            map_data[target.x][target.y] = TILE_CAVE
+            completed.append(key)
+    
+    for key in completed:
+        dirt_inventory += 1  # Add dirt when mining completes
+        del mining_targets[key]
+
+def update_dirt_cleaning():
+    global dirt_inventory, dirt_clear_counter
+    # Check if player is in air
+    player_tile_y = int(player_pos[1] // TILE_SIZE)
+    if player_tile_y < 30:  # Above ground level
+        dirt_clear_counter += 1
+        if dirt_clear_counter >= DIRT_CLEAR_FRAMES:
+            if dirt_inventory > 0:
+                dirt_inventory -= 1
+            dirt_clear_counter = 0
+    else:
+        dirt_clear_counter = 0
+
+def draw_dirt_bar(offscreen_surface):
+    BAR_HEIGHT = 20
+    BAR_WIDTH = 100
+    BAR_MARGIN = 10
+    
+    # Draw background
+    pygame.draw.rect(offscreen_surface, (50, 50, 50),
+                    pygame.Rect(BAR_MARGIN, BAR_MARGIN, BAR_WIDTH, BAR_HEIGHT))
+    
+    # Draw fill
+    fill_width = int((dirt_inventory / DIRT_CAPACITY) * BAR_WIDTH)
+    if fill_width > 0:
+        pygame.draw.rect(offscreen_surface, (139, 69, 19),
+                        pygame.Rect(BAR_MARGIN, BAR_MARGIN, fill_width, BAR_HEIGHT))
+    
+    # Draw border
+    pygame.draw.rect(offscreen_surface, (80, 40, 11),
+                    pygame.Rect(BAR_MARGIN, BAR_MARGIN, BAR_WIDTH, BAR_HEIGHT), 2)
+    
+    # Draw text
+    font = pygame.font.Font(None, 20)
+    text = font.render(f"Dirt: {dirt_inventory}/{DIRT_CAPACITY}", True, (255, 255, 255))
+    #offscreen_surface.blit(text, (BAR_MARGIN + BAR_WIDTH + 10, BAR_MARGIN))
+
+def draw_grid(offscreen_surface):
+    view_x = max(0, int(camera_pos[0] // TILE_SIZE))
+    view_y = max(0, int(camera_pos[1] // TILE_SIZE))
+    view_width = min(offscreen_surface.get_width() // TILE_SIZE + 2, MAP_WIDTH - view_x)
+    view_height = min(offscreen_surface.get_height() // TILE_SIZE + 2, MAP_HEIGHT - view_y)
+    
+    for x in range(view_x, view_x + view_width):
+        for y in range(view_y, view_y + view_height):
+            screen_x = int(x * TILE_SIZE - camera_pos[0])
+            screen_y = int(y * TILE_SIZE - camera_pos[1])
+            
+            if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
+                tile_type = map_data[x][y]
+                key = (x, y)
+                
+                if key in mining_targets:
+                    # Draw dirt background
+                    pygame.draw.rect(offscreen_surface, (139, 69, 19),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    # Draw mining progress overlay
+                    progress = mining_targets[key].progress
+                    size = int(TILE_SIZE * progress)
+                    offset = (TILE_SIZE - size) // 2
+                    if size > 0:
+                        pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                                       pygame.Rect(screen_x + offset, screen_y + offset, size, size))
+                    pygame.draw.rect(offscreen_surface, (80, 40, 11),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_DIRT:  # Dirt tile
+                    pygame.draw.rect(offscreen_surface, (139, 69, 19),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (80, 40, 11),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_CAVE:  # Cave air (darker)
+                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                elif tile_type == TILE_AIR:  # Sky air
+                    pygame.draw.rect(offscreen_surface, (0, 0, 255),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+
+def draw_player(offscreen_surface):
+    screen_x = int(player_pos[0] - camera_pos[0])
+    screen_y = int(player_pos[1] - camera_pos[1])
+    pygame.draw.rect(offscreen_surface, PLAYER_COLOR,
+                    pygame.Rect(screen_x, screen_y, PLAYER_SIZE, PLAYER_SIZE))
+
+def handle_event(event):
+    pass  # We'll use key states instead of events for smoother control
+
+def main(screen, rect):
+    global player_pos, player_vel, camera_pos, wall_contact_timer, last_wall_direction
+    
+    # Create a smaller offscreen surface for zooming
+    zoom_width = int(rect.width / ZOOM)
+    zoom_height = int(rect.height / ZOOM)
+    offscreen_surface = pygame.Surface((zoom_width, zoom_height))
+    
+    # Get keyboard state for smooth movement
+    keys = pygame.key.get_pressed()
+    
+    # Update mining animations
+    update_mining(delta_time)
+    
+    # Only allow movement if not mining
+    if not mining_targets:
+        # Apply horizontal movement with friction
+        if keys[pygame.K_LEFT]:
+            player_vel[0] = max(player_vel[0] - MOVE_SPEED * delta_time * 4, -MOVE_SPEED)
+        elif keys[pygame.K_RIGHT]:
+            player_vel[0] = min(player_vel[0] + MOVE_SPEED * delta_time * 4, MOVE_SPEED)
+        else:
+            # Apply friction
+            if player_vel[0] > 0:
+                player_vel[0] = max(0, player_vel[0] - FRICTION * delta_time)
+            elif player_vel[0] < 0:
+                player_vel[0] = min(0, player_vel[0] + FRICTION * delta_time)
+        
+        # Apply gravity and thrust
+        player_vel[1] += GRAVITY * delta_time
+        if keys[pygame.K_UP]:
+            player_vel[1] -= THRUST * delta_time
+        
+        # Update position with collision detection
+        new_x = player_pos[0] + player_vel[0] * delta_time
+        new_y = player_pos[1] + player_vel[1] * delta_time
+        
+        # Horizontal collision
+        if not check_collision(new_x, player_pos[1], PLAYER_SIZE, PLAYER_SIZE):
+            player_pos[0] = new_x
+        else:
+            player_vel[0] = 0
+        
+        # Vertical collision
+        if not check_collision(player_pos[0], new_y, PLAYER_SIZE, PLAYER_SIZE):
+            player_pos[1] = new_y
+        else:
+            player_vel[1] = 0
+        
+        # Adjust camera position for zoom
+        target_x = player_pos[0] - zoom_width//2
+        target_y = player_pos[1] - zoom_height//2
+        camera_pos[0] += (target_x - camera_pos[0]) * 0.1
+        camera_pos[1] += (target_y - camera_pos[1]) * 0.1
+        
+        # Clamp camera to zoomed map bounds
+        camera_pos[0] = max(0, min(camera_pos[0], MAP_WIDTH * TILE_SIZE - zoom_width))
+        camera_pos[1] = max(0, min(camera_pos[1], MAP_HEIGHT * TILE_SIZE - zoom_height))
+    
+    # Check for mining conditions
+    player_tile_x = int(player_pos[0] // TILE_SIZE)
+    player_tile_y = int(player_pos[1] // TILE_SIZE)
+    
+    # Debug info
+    #print(f"Player pos: {player_pos}, Player tile: ({player_tile_x}, {player_tile_y})")
+    pass
+    #print(f"Wall contact: {wall_contact_timer:.2f}s, Direction: {last_wall_direction}")
+    pass
+    
+    left_collision = check_collision(player_pos[0] - 1, player_pos[1], PLAYER_SIZE, PLAYER_SIZE)
+    right_collision = check_collision(player_pos[0] + 1, player_pos[1], PLAYER_SIZE, PLAYER_SIZE)
+    down_collision = check_collision(player_pos[0], player_pos[1] + 1, PLAYER_SIZE, PLAYER_SIZE)
+    
+    # Reset wall contact if not touching wall or direction changed
+    if mining_targets:  # Reset mining timer if already mining
+        wall_contact_timer = 0
+        last_wall_direction = None
+    elif not (left_collision or right_collision or down_collision):
+        if wall_contact_timer > 0:
+            #print("Resetting wall contact - no collision")
+            pass
+        wall_contact_timer = 0
+        last_wall_direction = None
+    elif keys[pygame.K_LEFT] and left_collision:
+        if last_wall_direction != 'left':
+            #print("Starting left wall contact")
+            pass
+            wall_contact_timer = 0
+            last_wall_direction = 'left'
+        wall_contact_timer += delta_time
+        #print(f"Left mining progress: {wall_contact_timer:.2f}/0.5")
+        pass
+        if wall_contact_timer >= 0.5:
+            if try_mine_tile(player_tile_x - 1, player_tile_y):
+                wall_contact_timer = 0
+    elif keys[pygame.K_RIGHT] and right_collision:
+        if last_wall_direction != 'right':
+            #print("Starting right wall contact")
+            pass
+            wall_contact_timer = 0
+            last_wall_direction = 'right'
+        wall_contact_timer += delta_time
+        #print(f"Right mining progress: {wall_contact_timer:.2f}/0.5")
+        pass
+        if wall_contact_timer >= 0.5:
+            if try_mine_tile(player_tile_x + 1, player_tile_y):
+                wall_contact_timer = 0
+    elif keys[pygame.K_DOWN] and down_collision:
+        if last_wall_direction != 'down':
+            #print("Starting down wall contact")
+            pass
+            wall_contact_timer = 0
+            last_wall_direction = 'down'
+        wall_contact_timer += delta_time
+        #print(f"Down mining progress: {wall_contact_timer:.2f}/0.5")
+        pass
+        if wall_contact_timer >= 0.5:
+            if try_mine_tile(player_tile_x, player_tile_y + 1):
+                wall_contact_timer = 0
+    else:
+        if wall_contact_timer > 0:
+            #print("Resetting wall contact - no mining condition met")
+            pass
+        wall_contact_timer = 0
+        last_wall_direction = None
+    
+    # Update dirt cleaning
+    update_dirt_cleaning()
+    
+    # Draw everything
+    draw_grid(offscreen_surface)
+    draw_player(offscreen_surface)
+    draw_dirt_bar(offscreen_surface)
+    
+    # Scale up the surface and blit to screen
+    scaled_surface = pygame.transform.scale(offscreen_surface, (rect.width, rect.height))
+    screen.blit(scaled_surface, (rect.x, rect.y))
+
+def close():
+    save_game_data()
