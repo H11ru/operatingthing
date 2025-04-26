@@ -40,9 +40,12 @@ class MiningTarget:
         self.x = x
         self.y = y
         self.progress = 0.0  # 0.0 to 1.0
-        self.player_start_x = player_pos[0]  # Store initial player position
-        self.player_start_y = player_pos[1]
-        self.player_target_x = player_target_x  # Target position for player
+        # Start from the center of current tile
+        current_tile_x = int(player_pos[0] // TILE_SIZE)
+        current_tile_y = int(player_pos[1] // TILE_SIZE)
+        self.player_start_x = (current_tile_x * TILE_SIZE) + (TILE_SIZE - PLAYER_SIZE) / 2
+        self.player_start_y = (current_tile_y * TILE_SIZE) + (TILE_SIZE - PLAYER_SIZE) / 2
+        self.player_target_x = player_target_x
         self.player_target_y = player_target_y
         
 mining_targets = {}  # (x,y) -> MiningTarget
@@ -110,24 +113,28 @@ def try_mine_tile(x, y):
     global mining_targets, dirt_inventory
     key = (x, y)
     if dirt_inventory >= DIRT_CAPACITY:
-        #print("Dirt inventory full!")
-        pass
         return False
     if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
         if map_data[x][y] == TILE_DIRT and key not in mining_targets:
-            # Calculate target position with 2x distance
-            player_target_x = player_pos[0]
-            player_target_y = player_pos[1]
+            # Snap player to grid first
+            start_x = (player_pos[0] // TILE_SIZE) * TILE_SIZE + TILE_SIZE/2 - PLAYER_SIZE/2
+            start_y = (player_pos[1] // TILE_SIZE) * TILE_SIZE + TILE_SIZE/2 - PLAYER_SIZE/2
             
-            # Adjust target position based on mining direction with 2x distance
+            # Calculate target position (center of target tile)
             if last_wall_direction == 'left':
-                player_target_x = player_pos[0] - TILE_SIZE  # Move left
+                target_x = (x * TILE_SIZE) + TILE_SIZE/2 - PLAYER_SIZE/2
+                target_y = start_y
             elif last_wall_direction == 'right':
-                player_target_x = player_pos[0] + TILE_SIZE  # Move right
+                target_x = (x * TILE_SIZE) + TILE_SIZE/2 - PLAYER_SIZE/2
+                target_y = start_y
             elif last_wall_direction == 'down':
-                player_target_y = player_pos[1] + TILE_SIZE  # Move down
+                target_x = start_x
+                target_y = (y * TILE_SIZE) + TILE_SIZE/2 - PLAYER_SIZE/2
                 
-            mining_targets[key] = MiningTarget(x, y, player_target_x, player_target_y)
+            mining_targets[key] = MiningTarget(x, y, target_x, target_y)
+            # Instantly snap to grid
+            player_pos[0] = start_x
+            player_pos[1] = start_y
             return True
     return False
 
