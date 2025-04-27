@@ -199,7 +199,7 @@ class PyAppWindow(Window):
             '__builtins__': __builtins__,
             'running': True,
             'delta_time': 0.0,
-            'api': window_manager,  # Pass the actual window manager instance
+            'api': PyOSAppAPI(window_manager, window_manager.filesystem),  # Pass the actual window manager instance
             'is_taskmanager': 'tskmngr.pya' in title.lower()  # Special flag for task manager
         }
         
@@ -222,7 +222,45 @@ class PyAppWindow(Window):
         if not self.running:
             return False
             
-        # Handle window events first
+        # Forward event to app first
+        if hasattr(event, 'pos'):
+            # Convert to window-relative coordinates
+            rel_x = event.pos[0] - self.x
+            rel_y = event.pos[1] - self.y
+            event_dict = {'pos': (rel_x, rel_y)}
+            if event.type == pygame.MOUSEMOTION:
+                event_dict['rel'] = event.rel
+                event_dict['buttons'] = event.buttons
+            else:
+                event_dict['button'] = event.button
+            adj_event = pygame.event.Event(event.type, event_dict)
+            # Forward event to app if it has an event handler
+            if 'handle_event' in self.namespace:
+                try:
+                    result = self.namespace['handle_event'](adj_event)
+                    if result is False:  # App wants to close
+                        self.close()
+                        return False
+                    elif result is True:  # App handled the event
+                        return True
+                except Exception as e:
+                    print(f"Error in app event handler:")
+                    __import__('traceback').print_exc()
+        elif event.type == pygame.KEYDOWN:
+            # Forward keyboard events to app if it has an event handler
+            if 'handle_event' in self.namespace:
+                try:
+                    result = self.namespace['handle_event'](event)
+                    if result is False:  # App wants to close
+                        self.close()
+                        return False
+                    elif result is True:  # App handled the event
+                        return True
+                except Exception as e:
+                    print(f"Error in app event handler:")
+                    __import__('traceback').print_exc()
+            
+        # Handle window events
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = pygame.mouse.get_pos()
             window_pos = (mouse_pos[0] - self.x, mouse_pos[1] - self.y)
@@ -239,38 +277,6 @@ class PyAppWindow(Window):
                 self.drag_offset = window_pos
                 return True
             
-            # Rest of mouse handling for app content
-            # Create an adjusted event for the app's coordinate space
-            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
-                if hasattr(event, 'pos'):
-                    rel_x = event.pos[0] - self.x - self.content_rect.x
-                    rel_y = event.pos[1] - self.y - self.content_rect.y
-                    if 0 <= rel_x < self.content_rect.width and 0 <= rel_y < self.content_rect.height:
-                        event_dict = {'pos': (rel_x, rel_y)}
-                        if event.type == pygame.MOUSEMOTION:
-                            event_dict['rel'] = event.rel
-                            event_dict['buttons'] = event.buttons
-                        else:
-                            event_dict['button'] = event.button
-                        adj_event = pygame.event.Event(event.type, event_dict)
-                        # Forward event to app if it has an event handler
-                        if 'handle_event' in self.namespace:
-                            try:
-                                self.namespace['handle_event'](adj_event)
-                            except Exception as e:
-                                #print(f"Error in app event handler: {str(e)}")
-                                print(f"Error in app event handler:")
-                                __import__('traceback').print_exc()
-            elif event.type == pygame.KEYDOWN:
-                # Forward keyboard events to app if it has an event handler
-                if 'handle_event' in self.namespace:
-                    try:
-                        self.namespace['handle_event'](event)
-                    except Exception as e:
-                        #print(f"Error in app event handler: {str(e)}")
-                        print(f"Error in app event handler:")
-                        __import__('traceback').print_exc()
-        
         elif event.type == pygame.MOUSEBUTTONUP:
             self.dragging = False
         
@@ -375,13 +381,18 @@ class WindowManager:
             
     def handle_event(self, event):
         # Handle events in reverse order (top to bottom)
+        handled = False
         for window in reversed(self.windows):
             result = window.handle_event(event)
             if result is False:  # Window wants to close
                 print(f"Closing window: {window.title}")
                 self.windows_to_remove.append(window)
-            return True
-        return False
+                handled = True
+                break
+            elif result is True:  # Window handled the event
+                handled = True
+                break
+        return handled
         
     def update(self):
         # Update FPS calculation
@@ -449,8 +460,32 @@ class WindowManager:
 
     def terminate_window(self, window, caller_window=None):
         """Special method for terminating windows with proper permissions"""
+        print(f"Terminate window called for: {window.title}")  # Debug: Print window being terminated
         if caller_window and 'tskmngr.pya' in caller_window.title.lower():
             # Task Manager can terminate any window, including itself
+            print(f"Adding window to remove list: {window.title}")  # Debug: Print window being added to remove list
+            window.close()  # Call close() first to properly shut down the window
             self.windows_to_remove.append(window)
             return True
+        print(f"Terminate window failed: {window.title}")  # Debug: Print failure
         return False
+
+class PyOSAppAPI:
+    def __init__(self, window_manager, filesystem):
+        self._wm = window_manager
+        self._fs = filesystem
+        self.version = "1.0"
+
+    @property
+    def windows(self):
+        return self._wm.windows
+
+    def get_performance(self):
+        return self._wm.get_performance()
+
+    def terminate_window(self, window, caller_window=None):
+        return self._wm.terminate_window(window, caller_window)
+
+    @property
+    def filesystem(self):
+        return self._fs

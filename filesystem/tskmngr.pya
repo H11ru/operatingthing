@@ -1,83 +1,179 @@
+import psutil
+import pygame
+
+# Color definitions
+DARK_GRAY = (50, 50, 50)
+GRAY = (100, 100, 100)
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+
 def init(rect):
     global buttons, font, last_metrics, self_window, last_perf_update
     font = pygame.font.Font(None, 24)
     buttons = []
     last_metrics = {'cpu': 0, 'memory': 0, 'window_count': 0, 'fps': 0}
-    last_perf_update = 0
+    last_perf_update = pygame.time.get_ticks()
     self_window = None
     
     # Store reference to our own window
-    for window in api.windows:  # Changed from get_windows()
+    for window in api.windows:
         if window.title.startswith("PyOS App - tskmngr"):
             self_window = window
             break
 
 def main(screen, rect):
-    global buttons, last_metrics, self_window
-    buttons = []
+    global buttons, last_metrics, self_window, last_perf_update
+    buttons = []  # Clear buttons each frame
     current_time = pygame.time.get_ticks()
     
-    # Update performance metrics every 100ms (10 times per second)
-    if current_time - last_perf_update > 100:
+    # Update performance metrics every 500ms (2 times per second) to reduce CPU usage
+    if current_time - last_perf_update > 500:
         metrics = api.get_performance()
         if metrics:
             last_metrics = metrics
         last_perf_update = current_time
     
     # Draw background
-    pygame.draw.rect(screen, (40, 40, 40), rect)
+    pygame.draw.rect(screen, DARK_GRAY, rect)
     
-    # Draw metrics section with live FPS
+    # Get metrics
+    cpu_percent = psutil.cpu_percent(interval=None)  # Use non-blocking CPU check
+    memory = psutil.virtual_memory()
+    memory_percent = memory.percent
+    
+    # Draw metrics section
     y = rect.y + 10
-    perf_texts = [
-        f"FPS: {last_metrics['fps']}",
-        f"CPU: {last_metrics['cpu']:.1f}%",
-        f"Memory: {last_metrics['memory']:.1f}%",
-        f"Windows: {last_metrics['window_count']}"
-    ]
+    font = pygame.font.SysFont('Arial', 16)
     
-    for text in perf_texts:
-        surface = font.render(text, True, (200, 200, 200))
-        screen.blit(surface, (rect.x + 20, y))
-        y += 25
+    # CPU bar background
+    y += 30
+    cpu_text = font.render(f"CPU Usage: {cpu_percent:.1f}%", True, WHITE)
+    screen.blit(cpu_text, (rect.x + 20, y))
     
-    y += 20
+    # Draw CPU usage bar
+    y += 25
+    bar_width = rect.width - 40
+    bar_height = 15
+    bar_rect = pygame.Rect(rect.x + 20, y, bar_width, bar_height)
+    pygame.draw.rect(screen, GRAY, bar_rect)
+    
+    # Draw filled portion
+    filled_width = int(bar_width * cpu_percent / 100)
+    filled_rect = pygame.Rect(rect.x + 20, y, filled_width, bar_height)
+    pygame.draw.rect(screen, GREEN if cpu_percent < 80 else RED, filled_rect)
+    
+    # Memory text
+    y += 30
+    memory_text = font.render(f"Memory Usage: {memory_percent:.1f}%", True, WHITE)
+    screen.blit(memory_text, (rect.x + 20, y))
+    
+    # Draw memory usage bar
+    y += 25
+    bar_width = rect.width - 40
+    bar_height = 15
+    bar_rect = pygame.Rect(rect.x + 20, y, bar_width, bar_height)
+    pygame.draw.rect(screen, GRAY, bar_rect)
+    
+    # Draw filled portion
+    filled_width = int(bar_width * memory_percent / 100)
+    filled_rect = pygame.Rect(rect.x + 20, y, filled_width, bar_height)
+    pygame.draw.rect(screen, GREEN if memory_percent < 80 else RED, filled_rect)
+    
+    # Draw windows list
+    y += 40  # Increased spacing before window list
+    
     # Draw window list section
-    pygame.draw.line(screen, (100, 100, 100), (rect.x, y), (rect.x + rect.width, y))
+    pygame.draw.line(screen, (100, 100, 100), 
+                    (rect.x + 10, y), 
+                    (rect.x + rect.width - 10, y))
     headers = font.render("Active Windows", True, (255, 255, 255))
     screen.blit(headers, (rect.x + 10, y + 5))
     y += 30
     
     # List all windows
     try:
-        windows = api.windows  # Changed from get_windows()
+        # Get fresh list of windows each time
+        windows = list(api.windows)  # Create a copy of the windows list
     except Exception as e:
-        windows = []
         print(f"Error getting windows: {str(e)}")
+        windows = []
         
+    # Clear previous buttons
+    buttons.clear()
+    
+    # Draw window list section
+    y += 10  # Additional spacing after headers
+    
+    # Headers
+    font = pygame.font.SysFont('Arial', 14)
+    headers = font.render("Window Title", True, (255, 255, 255))
+    screen.blit(headers, (rect.x + 20, y))
+    
+    y += 30  # Space after headers
+    
+    # List windows and add kill buttons
     for window in windows:
-        text = font.render(f"{window.title}", True, (255, 255, 255))
+        if window == self_window:
+            continue
+            
+        title = window.title
+        if len(title) > 40:
+            title = title[:37] + "..."
+            
+        # Create window title button
+        title_rect = pygame.Rect(rect.x + 20, y, rect.width - 100, 22)
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Change color if mouse is over title
+        title_color = (200, 200, 200) if title_rect.collidepoint(mouse_pos) else WHITE
+        text = font.render(title, True, title_color)
         screen.blit(text, (rect.x + 20, y))
         
-        # Add close button
-        close_rect = pygame.Rect(rect.x + rect.width - 60, y, 50, 20)
-        pygame.draw.rect(screen, (200, 50, 50), close_rect)
-        close_text = font.render("Close", True, (255, 255, 255))
-        screen.blit(close_text, (close_rect.x + 5, close_rect.y + 2))
-        buttons.append((close_rect, window))
+        # Create and draw kill button
+        button_rect = pygame.Rect(rect.x + rect.width - 80, y, 60, 22)
         
-        y += 25
+        # Change color if mouse is over button
+        button_color = (255, 0, 0) if button_rect.collidepoint(mouse_pos) else (100, 0, 0)
+        pygame.draw.rect(screen, button_color, button_rect)
+        
+        kill_text = font.render("Kill", True, (255, 255, 255))
+        text_rect = kill_text.get_rect(center=button_rect.center)
+        screen.blit(kill_text, text_rect)
+        
+        # Store button info
+        buttons.append({
+            'rect': button_rect,
+            'window': window,
+            'title_rect': title_rect
+        })
+        
+        y += 30  # Space between windows
 
 def handle_event(event):
-    try:
-        global buttons, self_window
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            for button, window in buttons:
-                if button.collidepoint(event.pos):
-                    # Don't allow task manager to kill itself
-                    if window != self_window:
-                        api.terminate_window(window, self_window)
-                    return True
-    except Exception as e:
-        print(f"Task Manager Error: {str(e)}")
-    return False
+    global buttons
+    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Check each button
+        for button in buttons:
+            # Check if kill button was clicked
+            if button['rect'].collidepoint(mouse_pos):
+                try:
+                    window = button['window']
+                    # Add window to the window manager's remove list
+                    api._wm.windows_to_remove.append(window)
+                    # Also call close() to ensure proper cleanup
+                    window.close()
+                except Exception as e:
+                    print(f"Error closing window: {str(e)}")
+                break
+            # Check if title was clicked (switch to window)
+            elif button['title_rect'].collidepoint(mouse_pos):
+                try:
+                    window = button['window']
+                    # Bring window to front
+                    api.bring_to_front(window)
+                except Exception as e:
+                    print(f"Error switching to window: {str(e)}")
+                break
