@@ -2,6 +2,7 @@
 
 import json
 import os
+import opensimplex
 
 # Constants
 MAP_WIDTH = 1000
@@ -20,14 +21,30 @@ camera_pos = [0.0, 0.0]
 
 # Tile types
 TILE_AIR = 0
+# Ore tile types (add at the top near your other TILE_ constants)
+TILE_COAL = 5
+TILE_IRON = 6
+TILE_COPPER = 7
+TILE_GOLD = 8
+TILE_DIAMOND = 9
+TILE_EMERALD = 10
 TILE_DIRT = 1
 TILE_CAVE = 2  # Cave air from dirt mining
 TILE_STONE = 3  # New stone tile type
 TILE_CAVE2 = 4  # Cave air from stone mining
+TILE_GRASS = 11
+
+# UPDATE: add spacing to make it easier to read
+solid = [       TILE_DIRT, TILE_STONE, TILE_COAL,  TILE_IRON,  TILE_COPPER, TILE_GOLD,  TILE_DIAMOND, TILE_EMERALD, TILE_GRASS] # Make sure not to put TILE_AIR or TILE_CAVE here
+minable = [     TILE_DIRT, TILE_STONE, TILE_COAL,  TILE_IRON,  TILE_COPPER, TILE_GOLD,  TILE_DIAMOND, TILE_EMERALD, TILE_GRASS] # Tiles that can be mined
+minedto = [     TILE_CAVE, TILE_CAVE2, TILE_CAVE2, TILE_CAVE2, TILE_CAVE2,  TILE_CAVE2, TILE_CAVE2,   TILE_CAVE2,   TILE_CAVE] # Tiles that are left after mining
+mining_times = [0.5,       1,          1.5,        2,          2,           1.5,        8,            3,            0.5]
 
 PLAYER_COLOR = (0, 255, 0)
 wall_contact_timer = 0  # Timer for wall contact
 last_wall_direction = None  # Track which wall we're touching
+
+
 
 # Mining settings
 DIRT_MINE_TIME = 0.5  # Time to mine dirt in seconds
@@ -92,6 +109,25 @@ def save_game_data():
     except Exception as e:
         print(f"Error saving game data: {e}")
 
+def generate_ore_cloud(tile_type, cloud, count):
+    for _ in range(count):
+        attempts = 0
+        while attempts < 20:
+            x = random.randint(2, MAP_WIDTH - len(cloud) - 2)
+            y = random.randint(32, MAP_HEIGHT - len(cloud) - 2)
+            if map_data[x][y] == TILE_STONE:
+                # Good spot
+                for dx in range(len(cloud)):
+                    for dy in range(len(cloud[0])):
+                        if map_data[x+dx][y+dy] == TILE_STONE:
+                            chance = cloud[dx][dy]
+                            if random.random() < chance:
+                                map_data[x+dx][y+dy] = tile_type
+                break
+            else:
+                attempts += 1
+        # After 20 fails, just skip to next cloud without placing
+
 def init(rect):
     global player_pos, camera_pos, player_vel, wall_contact_timer, last_wall_direction, map_data
     player_pos = [50.0 * TILE_SIZE, 29.0 * TILE_SIZE]
@@ -99,17 +135,60 @@ def init(rect):
     camera_pos = [player_pos[0] - rect.width//2, player_pos[1] - rect.height//2]
     wall_contact_timer = 0
     last_wall_direction = None
-    
-    # Initialize map_data if it hasn't been loaded
+
     if map_data is None:
         map_data = [[TILE_AIR for _ in range(MAP_HEIGHT)] for _ in range(MAP_WIDTH)]
+
         # Generate terrain - dirt above stone
         for x in range(MAP_WIDTH):
+            perlinnoise = int(opensimplex.noise2(x / 10.0, 0) * 5)
             for y in range(MAP_HEIGHT):
-                if y >= 30 and y < 50:  # Dirt layer from y=30 to y=50
-                    map_data[x][y] = TILE_DIRT
-                elif y >= 50:  # Stone layer below y=50
-                    map_data[x][y] = TILE_STONE
+                if y > 30 + perlinnoise:
+                    if y > 31 + random.randint(1, 3) + perlinnoise:
+                        map_data[x][y] = TILE_STONE
+                    else:
+                        map_data[x][y] = TILE_DIRT
+                    # grass
+                    if y == 31 + perlinnoise:
+                        map_data[x][y] = TILE_GRASS
+
+        # Ore clouds
+        big_cloud = [
+            [0, 0.2, 0.5, 0.2, 0],
+            [0.2, 0.5, 1.0, 0.5, 0.2],
+            [0.5, 1.0, 1.0, 1.0, 0.5],
+            [0.2, 0.5, 1.0, 0.5, 0.2],
+            [0, 0.2, 0.5, 0.2, 0]
+        ]
+        small_cloud = [
+            [0.2, 0.5, 0.2],
+            [0.5, 1.0, 0.5],
+            [0.2, 0.5, 0.2]
+        ]
+
+        # Coal
+        generate_ore_cloud(TILE_COAL, big_cloud, 50)
+        generate_ore_cloud(TILE_COAL, small_cloud, 100)
+
+        # Iron
+        generate_ore_cloud(TILE_IRON, big_cloud, 30)
+        generate_ore_cloud(TILE_IRON, small_cloud, 80)
+
+        # Copper
+        generate_ore_cloud(TILE_COPPER, big_cloud, 30)
+        generate_ore_cloud(TILE_COPPER, small_cloud, 50)
+
+        # Gold
+        generate_ore_cloud(TILE_GOLD, big_cloud, 10)
+        generate_ore_cloud(TILE_GOLD, small_cloud, 40)
+
+        # Diamond
+        generate_ore_cloud(TILE_DIAMOND, big_cloud, 10)
+        generate_ore_cloud(TILE_DIAMOND, small_cloud, 20)
+
+        # Emerald
+        generate_ore_cloud(TILE_EMERALD, small_cloud, 50)
+
     load_game_data()
 
 def check_collision(x, y, w, h):
@@ -123,7 +202,7 @@ def check_collision(x, y, w, h):
         for ty in range(tile_y1, tile_y2 + 1):
             if 0 <= tx < MAP_WIDTH and 0 <= ty < MAP_HEIGHT:
                 tile_type = map_data[tx][ty]
-                if tile_type == TILE_DIRT or tile_type == TILE_STONE:
+                if tile_type in solid:
                     return True
     return False
 
@@ -134,7 +213,7 @@ def try_mine_tile(x, y):
         return False
     if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
         tile_type = map_data[x][y]
-        if (tile_type == TILE_DIRT or tile_type == TILE_STONE) and key not in mining_targets:
+        if tile_type in minable and not key in mining_targets:
             # Snap player to grid first
             start_x = (player_pos[0] // TILE_SIZE) * TILE_SIZE + TILE_SIZE/2 - PLAYER_SIZE/2
             start_y = (player_pos[1] // TILE_SIZE) * TILE_SIZE + TILE_SIZE/2 - PLAYER_SIZE/2
@@ -151,7 +230,7 @@ def try_mine_tile(x, y):
                 target_y = (y * TILE_SIZE) + TILE_SIZE/2 - PLAYER_SIZE/2
             
             mining_targets[key] = MiningTarget(x, y, target_x, target_y, last_wall_direction)
-            mining_targets[key].mine_time = STONE_MINE_TIME if tile_type == TILE_STONE else DIRT_MINE_TIME
+            mining_targets[key].mine_time = mining_times[minable.index(tile_type)]  # Set mine time based on tile type
             # Instantly snap to grid
             player_pos[0] = start_x
             player_pos[1] = start_y
@@ -177,7 +256,7 @@ def update_mining(delta_time):
         
         if target.progress >= 1.0:
             tile_type = map_data[target.x][target.y]
-            map_data[target.x][target.y] = TILE_CAVE2 if tile_type == TILE_STONE else TILE_CAVE
+            map_data[target.x][target.y] = minedto[minable.index(tile_type)]
             completed.append(key)
     
     for key in completed:
@@ -254,6 +333,44 @@ def draw_grid(offscreen_surface):
                 elif tile_type == TILE_AIR:
                     pygame.draw.rect(offscreen_surface, (0, 0, 255),
                                    pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                elif tile_type == TILE_GRASS:
+                    pygame.draw.rect(offscreen_surface, (0, 255, 0),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (0, 200, 0),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_COAL:    
+                    pygame.draw.rect(offscreen_surface, (0, 0, 0),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (50, 50, 50),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_IRON:
+                    pygame.draw.rect(offscreen_surface, (200, 200, 200),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (150, 150, 150),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_COPPER:
+                    pygame.draw.rect(offscreen_surface, (255, 165, 0),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (200, 100, 0),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_GOLD:
+                    pygame.draw.rect(offscreen_surface, (255, 215, 0),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (200, 150, 0),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_DIAMOND:
+                    pygame.draw.rect(offscreen_surface, (0, 255, 255),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (0, 200, 200),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_EMERALD:
+                    pygame.draw.rect(offscreen_surface, (0, 255, 30),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                    pygame.draw.rect(offscreen_surface, (0, 200, 20),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
+                elif tile_type == TILE_AIR:
+                    pygame.draw.rect(offscreen_surface, (171, 205, 239),
+                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
     
     # Second pass: Draw mining overlays
     for key, target in mining_targets.items():
@@ -266,7 +383,12 @@ def draw_grid(offscreen_surface):
             if size > 0:
                 # Get the target tile type to determine mining animation color
                 tile_type = map_data[x][y]
-                overlay_color = (30, 30, 35) if tile_type == TILE_STONE else (40, 20, 5)
+                if minedto[minable.index(tile_type)] == TILE_CAVE:
+                    overlay_color = (40, 20, 5)
+                elif minedto[minable.index(tile_type)] == TILE_CAVE2:
+                    overlay_color = (30, 30, 35)
+                else:
+                    raise ValueError("Invalid tile type for mining animation")
                 
                 # Use target's stored direction instead of global
                 if target.direction == 'left':
