@@ -18,6 +18,7 @@ ZOOM = 2.0  # Camera zoom factor (2x zoom)
 player_pos = [50.0 * TILE_SIZE, 29.0 * TILE_SIZE]  # Pixel-based position
 player_vel = [0.0, 0.0]  # Velocity vector
 camera_pos = [0.0, 0.0]
+money = 0
 
 # Tile types
 TILE_AIR = 0
@@ -35,10 +36,39 @@ TILE_CAVE2 = 4  # Cave air from stone mining
 TILE_GRASS = 11
 
 # UPDATE: add spacing to make it easier to read
-solid = [       TILE_DIRT, TILE_STONE, TILE_COAL,  TILE_IRON,  TILE_COPPER, TILE_GOLD,  TILE_DIAMOND, TILE_EMERALD, TILE_GRASS] # Make sure not to put TILE_AIR or TILE_CAVE here
-minable = [     TILE_DIRT, TILE_STONE, TILE_COAL,  TILE_IRON,  TILE_COPPER, TILE_GOLD,  TILE_DIAMOND, TILE_EMERALD, TILE_GRASS] # Tiles that can be mined
-minedto = [     TILE_CAVE, TILE_CAVE2, TILE_CAVE2, TILE_CAVE2, TILE_CAVE2,  TILE_CAVE2, TILE_CAVE2,   TILE_CAVE2,   TILE_CAVE] # Tiles that are left after mining
-mining_times = [0.5,       1,          1.5,        2,          2,           1.5,        8,            3,            0.5]
+solid = [       TILE_DIRT, TILE_STONE, TILE_COAL,  TILE_IRON,  TILE_COPPER, TILE_GOLD,  TILE_DIAMOND, TILE_EMERALD, TILE_GRASS ] # Make sure not to put TILE_AIR or TILE_CAVE here
+minable = [     TILE_DIRT, TILE_STONE, TILE_COAL,  TILE_IRON,  TILE_COPPER, TILE_GOLD,  TILE_DIAMOND, TILE_EMERALD, TILE_GRASS ] # Tiles that can be mined
+minedto = [     TILE_CAVE, TILE_CAVE2, TILE_CAVE2, TILE_CAVE2, TILE_CAVE2,  TILE_CAVE2, TILE_CAVE2,   TILE_CAVE2,   TILE_CAVE  ] # Tiles that are left after mining
+price = [       0,         0,          1,          3,          3,           5,          10,          20,            -1         ] # What do the tiles sell for? (ignore grass, you cant get that in your inventory anyway)
+mining_times = [0.5,       1,          1.5,        2,          2,           1.5,        8,            3,            0.5        ] # How long does it take to mine* the tile? (in seconds) *technically, its how long the animation plays for
+colors = {
+    TILE_DIRT: (139, 69, 19),  # Brown
+    TILE_STONE: (128, 128, 128),  # Gray
+    TILE_CAVE: (40, 20, 5),  # Dark cave color
+    TILE_CAVE2: (30, 30, 35),  # Lighter cave color
+    TILE_AIR: (171, 205, 239),  # Light blue for air
+    TILE_GRASS: (0, 255, 0),  # Green for grass
+    TILE_COAL: (0, 0, 0),  # Black for coal
+    TILE_IRON: (200, 200, 200),  # Light gray for iron
+    TILE_COPPER: (255, 165, 0),  # Orange for copper
+    TILE_GOLD: (255, 215, 0),   # Gold color
+    TILE_DIAMOND: (0, 255, 255),   # Cyan for diamond
+    TILE_EMERALD: (0, 255, 30)   # Bright green for emerald
+}
+outline_colors = {
+    TILE_DIRT: (80, 40, 11),  # Darker brown for dirt outline
+    TILE_STONE: (90, 90, 90),  # Darker gray for stone outline
+    TILE_CAVE: -1, # No outline for cave
+    TILE_CAVE2: -1, # No outline for cave2
+    TILE_AIR: -1, # No outline for air
+    TILE_GRASS: (0, 200, 0),  # Darker green for grass outline
+    TILE_COAL: (50, 50, 50),  # Darker gray for coal outline
+    TILE_IRON: (150, 150, 150),  # Darker gray for iron outline
+    TILE_COPPER: (200, 100, 0),   # Brown for copper outline
+    TILE_GOLD: (200, 150, 0),   # Brown for gold outline
+    TILE_DIAMOND: (0, 200, 200),   # Darker cyan for diamond outline
+    TILE_EMERALD: (0, 200, 20)   # Darker green for emerald outline
+}
 
 PLAYER_COLOR = (0, 255, 0)
 wall_contact_timer = 0  # Timer for wall contact
@@ -47,12 +77,10 @@ last_wall_direction = None  # Track which wall we're touching
 
 
 # Mining settings
-DIRT_MINE_TIME = 0.5  # Time to mine dirt in seconds
-STONE_MINE_TIME = 1.5  # Time to mine stone in seconds
-DIRT_CAPACITY = 10
-DIRT_CLEAR_FRAMES = 3  # Every 3 frames clear 1 dirt when in air
-dirt_inventory = 0
-dirt_clear_counter = 0
+INVENTORY_CAPACITY = 10
+INVENTORY_EMPTYING_TICK = 3  # Every 3 frames clear 1 dirt when in air
+inventory = []
+clear_ticker = 0
 
 # Data persistence
 SAVE_PATH = os.path.join("filesystem", "gaime_save.json")
@@ -79,17 +107,19 @@ mining_targets = {}  # (x,y) -> MiningTarget
 MINE_SPEED = 1.0  # Time in seconds to mine a block
 
 def load_game_data():
-    global dirt_inventory, map_data
+    global inventory, map_data
     try:
         if os.path.exists(SAVE_PATH):
             with open(SAVE_PATH, 'r') as f:
                 data = json.load(f)
-                dirt_inventory = data.get('dirt', 0)
+                inventory = data.get('inventory', [])
                 # Load world state if it exists
                 if 'world' in data:
                     for y in range(MAP_HEIGHT):
                         for x in range(MAP_WIDTH):
                             map_data[x][y] = data['world'][y][x]
+                # Money
+                money = data.get('money', 0)
     except Exception as e:
         print(f"Error loading game data: {e}")
         # Initialize new world if load fails
@@ -100,9 +130,10 @@ def save_game_data():
         # Convert world data to 2D list for JSON serialization
         world_data = [[map_data[x][y] for x in range(MAP_WIDTH)] for y in range(MAP_HEIGHT)]
         save_data = {
-            'dirt': dirt_inventory,
+            'inventory': inventory,
             'world': world_data,
-            'version': 1  # For future compatibility
+            'money': money,
+            'version': 2
         }
         # Use the PyOS filesystem API to create the file
         api.filesystem.create_file("gaime_save.json", json.dumps(save_data), "json")
@@ -207,9 +238,10 @@ def check_collision(x, y, w, h):
     return False
 
 def try_mine_tile(x, y):
-    global mining_targets, dirt_inventory
+    global mining_targets, inventory
     key = (x, y)
-    if dirt_inventory >= DIRT_CAPACITY:
+    #if inventory >= INVENTORY_CAPACITY:
+    if len(inventory) >= INVENTORY_CAPACITY:
         return False
     if 0 <= x < MAP_WIDTH and 0 <= y < MAP_HEIGHT:
         tile_type = map_data[x][y]
@@ -238,7 +270,7 @@ def try_mine_tile(x, y):
     return False
 
 def update_mining(delta_time):
-    global mining_targets, map_data, player_pos, player_vel, dirt_inventory
+    global mining_targets, map_data, player_pos, player_vel, inventory
     completed = []
     
     for key, target in mining_targets.items():
@@ -257,26 +289,40 @@ def update_mining(delta_time):
         if target.progress >= 1.0:
             tile_type = map_data[target.x][target.y]
             map_data[target.x][target.y] = minedto[minable.index(tile_type)]
-            completed.append(key)
+            completed.append((tile_type, key))
     
-    for key in completed:
-        dirt_inventory += 1  # Add dirt when mining completes
+    for (i, key) in completed:
+        #inventory += 1  # Add dirt when mining completes # V1
+        # V2:
+        #type_of_mining = map_data[key[0]][key[1]] # BAD: map data already changed. wen eed to store the original tile type in the mining task
+        # assume its already there
+        type_of_mining = i
+        if type_of_mining == TILE_GRASS:
+            # edge case: grass dies
+            type_of_mining = TILE_DIRT
+        inventory.append(type_of_mining)
         del mining_targets[key]
 
-def update_dirt_cleaning():
-    global dirt_inventory, dirt_clear_counter
+def update_inventory_emptying():
+    global inventory, clear_ticker, money
     # Check if player is in air
     player_tile_y = int(player_pos[1] // TILE_SIZE)
     if player_tile_y < 30:  # Above ground level
-        dirt_clear_counter += 1
-        if dirt_clear_counter >= DIRT_CLEAR_FRAMES:
-            if dirt_inventory > 0:
-                dirt_inventory -= 1
-            dirt_clear_counter = 0
+        clear_ticker += 1
+        if clear_ticker >= INVENTORY_EMPTYING_TICK:
+            """if inventory > 0:
+                inventory -= 1"""
+            if inventory:
+                # Award player coins
+                value = price[minable.index(inventory[-1])]
+                money += value
+                # Remove the last item from the inventory
+                inventory.pop()
+            clear_ticker = 0
     else:
-        dirt_clear_counter = 0
+        clear_ticker = 0
 
-def draw_dirt_bar(offscreen_surface):
+def draw_inventory(offscreen_surface):
     BAR_HEIGHT = 20
     BAR_WIDTH = 100
     BAR_MARGIN = 10
@@ -286,19 +332,49 @@ def draw_dirt_bar(offscreen_surface):
                     pygame.Rect(BAR_MARGIN, BAR_MARGIN, BAR_WIDTH, BAR_HEIGHT))
     
     # Draw fill
-    fill_width = int((dirt_inventory / DIRT_CAPACITY) * BAR_WIDTH)
+    """fill_width = int((inventory / INVENTORY_CAPACITY) * BAR_WIDTH)
     if fill_width > 0:
         pygame.draw.rect(offscreen_surface, (139, 69, 19),
-                        pygame.Rect(BAR_MARGIN, BAR_MARGIN, fill_width, BAR_HEIGHT))
-    
+                        pygame.Rect(BAR_MARGIN, BAR_MARGIN, fill_width, BAR_HEIGHT))"""
     # Draw border
-    pygame.draw.rect(offscreen_surface, (80, 40, 11),
-                    pygame.Rect(BAR_MARGIN, BAR_MARGIN, BAR_WIDTH, BAR_HEIGHT), 2)
+    pygame.draw.rect(offscreen_surface, (80, 80, 80),
+                    pygame.Rect(BAR_MARGIN-2, BAR_MARGIN-2, BAR_WIDTH+2, BAR_HEIGHT+4), 2)
+    # NEW: resources are overworld colors and have 1px gaps inbetween
+    draw_x = BAR_MARGIN 
+    for pos, thing in enumerate(inventory):
+        resource_color = colors[thing]
+        # draw a bar of length BAR_WIDTH / INVENTORY_CAPACITY - 2
+        pygame.draw.rect(offscreen_surface, resource_color,
+                        pygame.Rect(draw_x, BAR_MARGIN, BAR_WIDTH / INVENTORY_CAPACITY - 2, BAR_HEIGHT))
+        draw_x += BAR_WIDTH / INVENTORY_CAPACITY # Advance to next bar
+
     
-    # Draw text
-    font = pygame.font.Font(None, 20)
-    text = font.render(f"Dirt: {dirt_inventory}/{DIRT_CAPACITY}", True, (255, 255, 255))
-    #offscreen_surface.blit(text, (BAR_MARGIN + BAR_WIDTH + 10, BAR_MARGIN))
+    
+    # Draw text. repusposed for coins
+    font = pygame.font.Font(None, 25)
+    text_fg = font.render(f"Coins: {money}", True, (255, 255, 0))
+    text_bg = font.render(f"Coins: {money}", True, (0, 0, 0))
+    # blit in a octagonal thingy:
+    # bg bg bg
+    # bg fg bg
+    # bg bg bg
+    # fg last
+    # to get a nice outline
+    # 1. top row
+    O = 30
+    offscreen_surface.blit(text_bg, (BAR_MARGIN - 1, O + BAR_MARGIN - 1))   
+    offscreen_surface.blit(text_bg, (BAR_MARGIN, O + BAR_MARGIN - 1))
+    offscreen_surface.blit(text_bg, (BAR_MARGIN + 1, O + BAR_MARGIN - 1))
+    # 2. middle row
+    offscreen_surface.blit(text_bg, (BAR_MARGIN - 1, O + BAR_MARGIN))
+    offscreen_surface.blit(text_bg, (BAR_MARGIN + 1, O + BAR_MARGIN))
+    # 3. bottom row
+    offscreen_surface.blit(text_bg, (BAR_MARGIN - 1, O + BAR_MARGIN + 1))
+    offscreen_surface.blit(text_bg, (BAR_MARGIN, O + BAR_MARGIN + 1))
+    offscreen_surface.blit(text_bg, (BAR_MARGIN + 1, O + BAR_MARGIN + 1))
+    # 4. center
+    offscreen_surface.blit(text_fg, (BAR_MARGIN, O + BAR_MARGIN))
+
 
 def draw_grid(offscreen_surface):
     view_x = max(0, int(camera_pos[0] // TILE_SIZE))
@@ -314,64 +390,13 @@ def draw_grid(offscreen_surface):
                 screen_y = int(y * TILE_SIZE - camera_pos[1])
                 
                 tile_type = map_data[x][y]
-                if tile_type == TILE_DIRT:
-                    pygame.draw.rect(offscreen_surface, (139, 69, 19),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (80, 40, 11),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_STONE:
-                    pygame.draw.rect(offscreen_surface, (128, 128, 128),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (90, 90, 90),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_CAVE:
-                    pygame.draw.rect(offscreen_surface, (40, 20, 5),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                elif tile_type == TILE_CAVE2:
-                    pygame.draw.rect(offscreen_surface, (30, 30, 35),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                elif tile_type == TILE_AIR:
-                    pygame.draw.rect(offscreen_surface, (0, 0, 255),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                elif tile_type == TILE_GRASS:
-                    pygame.draw.rect(offscreen_surface, (0, 255, 0),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (0, 200, 0),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_COAL:    
-                    pygame.draw.rect(offscreen_surface, (0, 0, 0),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (50, 50, 50),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_IRON:
-                    pygame.draw.rect(offscreen_surface, (200, 200, 200),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (150, 150, 150),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_COPPER:
-                    pygame.draw.rect(offscreen_surface, (255, 165, 0),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (200, 100, 0),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_GOLD:
-                    pygame.draw.rect(offscreen_surface, (255, 215, 0),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (200, 150, 0),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_DIAMOND:
-                    pygame.draw.rect(offscreen_surface, (0, 255, 255),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (0, 200, 200),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_EMERALD:
-                    pygame.draw.rect(offscreen_surface, (0, 255, 30),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-                    pygame.draw.rect(offscreen_surface, (0, 200, 20),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)
-                elif tile_type == TILE_AIR:
-                    pygame.draw.rect(offscreen_surface, (171, 205, 239),
-                                   pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-    
+                tile_color = colors[tile_type]
+                outline_color = outline_colors[tile_type]
+                pygame.draw.rect(offscreen_surface, tile_color,
+                                pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE))
+                if not outline_color == -1:
+                    pygame.draw.rect(offscreen_surface, outline_color,
+                                    pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE), 1)    
     # Second pass: Draw mining overlays
     for key, target in mining_targets.items():
         x, y = key
@@ -537,12 +562,13 @@ def main(screen, rect):
         last_wall_direction = None
     
     # Update dirt cleaning
-    update_dirt_cleaning()
+    update_inventory_emptying()
     
+    #print(inventory)
     # Draw everything
     draw_grid(offscreen_surface)
     draw_player(offscreen_surface)
-    draw_dirt_bar(offscreen_surface)
+    draw_inventory(offscreen_surface)
     
     # Scale up the surface and blit to screen
     scaled_surface = pygame.transform.scale(offscreen_surface, (rect.width, rect.height))
@@ -550,3 +576,4 @@ def main(screen, rect):
 
 def close():
     save_game_data()
+# chess battle advanced
