@@ -1,5 +1,7 @@
 import psutil
 import pygame
+import os
+import time
 
 # Color definitions
 DARK_GRAY = (50, 50, 50)
@@ -7,14 +9,31 @@ GRAY = (100, 100, 100)
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
+SPARKLINE_COLOR = (100, 200, 100)
+SECTION_BG = (60, 60, 60)
+SEPARATOR = (80, 80, 80)
+HEADER_COLOR = (180, 255, 180)
+
+def get_initial_cpu_load():
+    try:
+        # Get initial CPU load with a small interval to ensure accurate reading
+        return psutil.cpu_percent(interval=0.1) / 100.0
+    except Exception as e:
+        print(f"Error getting initial CPU load: {str(e)}")
+        return 0.0
 
 def init(rect):
-    global buttons, font, last_metrics, self_window, last_perf_update
+    global buttons, font, last_metrics, self_window, last_perf_update, load_history, last_load_update
     font = pygame.font.Font(None, 24)
     buttons = []
     last_metrics = {'cpu': 0, 'memory': 0, 'window_count': 0, 'fps': 0}
     last_perf_update = pygame.time.get_ticks()
+    last_load_update = time.time()
     self_window = None
+    
+    # Get initial CPU load
+    initial_load = get_initial_cpu_load()
+    load_history = [initial_load] * 30  # Initialize with current CPU load
     
     # Store reference to our own window
     for window in api.windows:
@@ -22,133 +41,179 @@ def init(rect):
             self_window = window
             break
 
+def get_system_metrics():
+    try:
+        # Get CPU load (non-blocking)
+        cpu_load = psutil.cpu_percent(interval=None) / 100.0
+        
+        # Get memory info (with error handling)
+        try:
+            memory = psutil.virtual_memory()
+            memory_percent = memory.percent
+        except Exception as e:
+            print(f"Error getting memory info: {str(e)}")
+            memory_percent = 0
+            
+        return cpu_load, memory_percent
+    except Exception as e:
+        print(f"Error getting system metrics: {str(e)}")
+        return 0, 0
+
+def get_system_load():
+    global load_history, last_load_update
+    current_time = time.time()
+    
+    # Only update load every 10 seconds
+    if current_time - last_load_update < 10.0:
+        return sum(load_history) / len(load_history) * 100
+        
+    try:
+        # Get system load
+        cpu_load, _ = get_system_metrics()
+            
+        # Update load history
+        load_history.pop(0)
+        load_history.append(cpu_load)
+        last_load_update = current_time
+        
+        # Calculate average load
+        avg_load = sum(load_history) / len(load_history)
+        return avg_load * 100  # Convert to percentage
+    except Exception as e:
+        print(f"Error getting system load: {str(e)}")
+        return 0
+
+def draw_sparkline(screen, x, y, width, height, values):
+    if not values:
+        return
+        
+    # Find min and max values
+    min_val = min(values)
+    max_val = max(values)
+    if max_val == min_val:
+        max_val = min_val + 1  # Prevent division by zero
+        
+    # Calculate points
+    points = []
+    for i, val in enumerate(values):
+        x_pos = x + (i * width) // (len(values) - 1)
+        y_pos = y + height - ((val - min_val) * height) // (max_val - min_val)
+        points.append((x_pos, y_pos))
+    
+    # Draw lines
+    if len(points) > 1:
+        pygame.draw.lines(screen, SPARKLINE_COLOR, False, points, 2)
+
 def main(screen, rect):
     global buttons, last_metrics, self_window, last_perf_update
     buttons = []  # Clear buttons each frame
     current_time = pygame.time.get_ticks()
     
-    # Update performance metrics every 500ms (2 times per second) to reduce CPU usage
-    if current_time - last_perf_update > 500:
+    # Update performance metrics every 2 seconds
+    if current_time - last_perf_update > 2000:
         metrics = api.get_performance()
         if metrics:
             last_metrics = metrics
         last_perf_update = current_time
     
-    # Draw background
-    pygame.draw.rect(screen, DARK_GRAY, rect)
+    # Padding and section sizes
+    pad = 20
+    section_height = 110
+    section_width = rect.width - 2 * pad
+    x0 = rect.x + pad
+    y = rect.y + pad
     
-    # Get metrics
-    cpu_percent = psutil.cpu_percent(interval=None)  # Use non-blocking CPU check
-    memory = psutil.virtual_memory()
-    memory_percent = memory.percent
-    
-    # Draw metrics section
-    y = rect.y + 10
+    # --- System Load Section ---
+    pygame.draw.rect(screen, SECTION_BG, (x0, y, section_width, section_height), border_radius=8)
+    header_font = pygame.font.SysFont('Arial', 20, bold=True)
     font = pygame.font.SysFont('Arial', 16)
     
-    # CPU bar background
-    y += 30
-    cpu_text = font.render(f"CPU Usage: {cpu_percent:.1f}%", True, WHITE)
-    screen.blit(cpu_text, (rect.x + 20, y))
+    # Section header
+    header = header_font.render("System Load", True, HEADER_COLOR)
+    screen.blit(header, (x0 + 10, y + 8))
     
-    # Draw CPU usage bar
-    y += 25
-    bar_width = rect.width - 40
+    # System Load value
+    system_load = get_system_load()
+    load_text = font.render(f"{system_load:.1f}%", True, WHITE)
+    screen.blit(load_text, (x0 + section_width - 70, y + 12))
+    
+    # System Load bar
+    bar_y = y + 40
+    bar_width = section_width - 40
     bar_height = 15
-    bar_rect = pygame.Rect(rect.x + 20, y, bar_width, bar_height)
-    pygame.draw.rect(screen, GRAY, bar_rect)
+    bar_rect = pygame.Rect(x0 + 10, bar_y, bar_width, bar_height)
+    pygame.draw.rect(screen, GRAY, bar_rect, border_radius=6)
+    filled_width = int(bar_width * system_load / 100)
+    filled_rect = pygame.Rect(x0 + 10, bar_y, filled_width, bar_height)
+    pygame.draw.rect(screen, GREEN if system_load < 80 else RED, filled_rect, border_radius=6)
     
-    # Draw filled portion
-    filled_width = int(bar_width * cpu_percent / 100)
-    filled_rect = pygame.Rect(rect.x + 20, y, filled_width, bar_height)
-    pygame.draw.rect(screen, GREEN if cpu_percent < 80 else RED, filled_rect)
+    # Sparkline label
+    sparkline_label = font.render("5 min load trend", True, (180, 180, 180))
+    screen.blit(sparkline_label, (x0 + 10, bar_y + 22))
+    # Sparkline
+    sparkline_height = 30
+    draw_sparkline(screen, x0 + 130, bar_y + 25, bar_width - 120, sparkline_height, load_history)
     
-    # Memory text
-    y += 30
-    memory_text = font.render(f"Memory Usage: {memory_percent:.1f}%", True, WHITE)
-    screen.blit(memory_text, (rect.x + 20, y))
+    # Separator
+    y += section_height + 10
+    pygame.draw.line(screen, SEPARATOR, (x0, y), (x0 + section_width, y), 2)
+    y += 10
     
-    # Draw memory usage bar
-    y += 25
-    bar_width = rect.width - 40
-    bar_height = 15
-    bar_rect = pygame.Rect(rect.x + 20, y, bar_width, bar_height)
-    pygame.draw.rect(screen, GRAY, bar_rect)
-    
-    # Draw filled portion
+    # --- Memory Usage Section ---
+    pygame.draw.rect(screen, SECTION_BG, (x0, y, section_width, 70), border_radius=8)
+    header = header_font.render("Memory Usage", True, HEADER_COLOR)
+    screen.blit(header, (x0 + 10, y + 8))
+    _, memory_percent = get_system_metrics()
+    mem_text = font.render(f"{memory_percent:.1f}%", True, WHITE)
+    screen.blit(mem_text, (x0 + section_width - 70, y + 12))
+    bar_y = y + 40
+    bar_rect = pygame.Rect(x0 + 10, bar_y, bar_width, bar_height)
+    pygame.draw.rect(screen, GRAY, bar_rect, border_radius=6)
     filled_width = int(bar_width * memory_percent / 100)
-    filled_rect = pygame.Rect(rect.x + 20, y, filled_width, bar_height)
-    pygame.draw.rect(screen, GREEN if memory_percent < 80 else RED, filled_rect)
+    filled_rect = pygame.Rect(x0 + 10, bar_y, filled_width, bar_height)
+    pygame.draw.rect(screen, GREEN if memory_percent < 80 else RED, filled_rect, border_radius=6)
     
-    # Draw windows list
-    y += 40  # Increased spacing before window list
+    # Separator
+    y += 70 + 10
+    pygame.draw.line(screen, SEPARATOR, (x0, y), (x0 + section_width, y), 2)
+    y += 10
     
-    # Draw window list section
-    pygame.draw.line(screen, (100, 100, 100), 
-                    (rect.x + 10, y), 
-                    (rect.x + rect.width - 10, y))
-    headers = font.render("Active Windows", True, (255, 255, 255))
-    screen.blit(headers, (rect.x + 10, y + 5))
-    y += 30
+    # --- Active Windows Section ---
+    pygame.draw.rect(screen, SECTION_BG, (x0, y, section_width, rect.height - y + rect.y - pad), border_radius=8)
+    header = header_font.render("Active Windows", True, HEADER_COLOR)
+    screen.blit(header, (x0 + 10, y + 8))
+    font = pygame.font.SysFont('Arial', 14)
+    headers = font.render("Window Title", True, WHITE)
+    screen.blit(headers, (x0 + 20, y + 40))
     
     # List all windows
     try:
-        # Get fresh list of windows each time
-        windows = list(api.windows)  # Create a copy of the windows list
+        windows = list(api.windows)
     except Exception as e:
         print(f"Error getting windows: {str(e)}")
         windows = []
-        
-    # Clear previous buttons
     buttons.clear()
-    
-    # Draw window list section
-    y += 10  # Additional spacing after headers
-    
-    # Headers
-    font = pygame.font.SysFont('Arial', 14)
-    headers = font.render("Window Title", True, (255, 255, 255))
-    screen.blit(headers, (rect.x + 20, y))
-    
-    y += 30  # Space after headers
-    
-    # List windows and add kill buttons
+    y_win = y + 70
     for window in windows:
         if window == self_window:
             continue
-            
         title = window.title
         if len(title) > 40:
             title = title[:37] + "..."
-            
-        # Create window title button
-        title_rect = pygame.Rect(rect.x + 20, y, rect.width - 100, 22)
+        title_rect = pygame.Rect(x0 + 20, y_win, section_width - 120, 22)
         mouse_pos = pygame.mouse.get_pos()
-        
-        # Change color if mouse is over title
         title_color = (200, 200, 200) if title_rect.collidepoint(mouse_pos) else WHITE
         text = font.render(title, True, title_color)
-        screen.blit(text, (rect.x + 20, y))
-        
-        # Create and draw kill button
-        button_rect = pygame.Rect(rect.x + rect.width - 80, y, 60, 22)
-        
-        # Change color if mouse is over button
+        screen.blit(text, (x0 + 20, y_win))
+        # Kill button
+        button_rect = pygame.Rect(x0 + section_width - 80, y_win, 60, 22)
         button_color = (255, 0, 0) if button_rect.collidepoint(mouse_pos) else (100, 0, 0)
-        pygame.draw.rect(screen, button_color, button_rect)
-        
-        kill_text = font.render("Kill", True, (255, 255, 255))
+        pygame.draw.rect(screen, button_color, button_rect, border_radius=6)
+        kill_text = font.render("Kill", True, WHITE)
         text_rect = kill_text.get_rect(center=button_rect.center)
         screen.blit(kill_text, text_rect)
-        
-        # Store button info
-        buttons.append({
-            'rect': button_rect,
-            'window': window,
-            'title_rect': title_rect
-        })
-        
-        y += 30  # Space between windows
+        buttons.append({'rect': button_rect, 'window': window, 'title_rect': title_rect})
+        y_win += 30
 
 def handle_event(event):
     global buttons
