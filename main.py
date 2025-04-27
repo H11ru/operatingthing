@@ -23,7 +23,7 @@ class PyOS:
         
         # Initialize core systems
         self.filesystem = FileSystem()
-        self.window_manager = WindowManager(self.screen)
+        self.window_manager = WindowManager(self.screen, filesystem=self.filesystem)
         self.app_manager = AppManager(self.filesystem)
         
         # Create sample files first

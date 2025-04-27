@@ -474,14 +474,34 @@ class Desktop:
             y = 20 + (i // 5) * 100
             self.icons.append(FileIcon(name, x, y, file_type))
 
+    def is_point_over_window(self, pos):
+        # Check if the point is over any window
+        for window in reversed(self.window_manager.windows):
+            if (window.x <= pos[0] <= window.x + window.width and 
+                window.y <= pos[1] <= window.y + window.height):
+                return True
+        return False
+
     def handle_event(self, event):
-        self.taskbar.handle_event(event, self.window_manager)
+        # Handle taskbar events first
+        if self.taskbar.handle_event(event, self.window_manager):
+            return
+
         if event.type == pygame.MOUSEBUTTONDOWN:
             pos = pygame.mouse.get_pos()
-            if pos[1] < self.taskbar.y:  # Only handle clicks above taskbar
+            # Only handle clicks above taskbar and not over windows
+            if pos[1] < self.taskbar.y and not self.is_point_over_window(pos):
                 for icon in self.icons:
                     if icon.rect.collidepoint(pos):
-                        self.open_file(icon.name, icon.file_type)
+                        if event.button == 3 and pygame.key.get_mods() & pygame.KMOD_SHIFT:  # Right click + SHIFT
+                            # Delete the file
+                            try:
+                                self.app_manager.filesystem.delete_file(icon.name)
+                                self.refresh_icons()  # Refresh icons to remove the deleted file
+                            except Exception as e:
+                                print(f"Error deleting file: {str(e)}")
+                        elif event.button == 1:  # Left click
+                            self.open_file(icon.name, icon.file_type)
 
     def open_file(self, filename, file_type):
         if file_type == "py":
@@ -497,8 +517,23 @@ class Desktop:
                     sys.stdout = output_buffer
                     
                     try:
+                        # Create namespace with everything except pygame
+                        namespace = {
+                            'psutil': __import__('psutil'),
+                            'random': __import__('random'),
+                            'math': __import__('math'),
+                            'time': __import__('time'),
+                            'sys': sys,
+                            'io': io,
+                            'os': __import__('os'),
+                            '__name__': '__main__',
+                            '__file__': result,
+                            '__builtins__': __builtins__,
+                            'api': self.window_manager,  # Pass window manager for API access
+                        }
+                        
                         with open(result, 'r') as file:
-                            exec(file.read(), {}, {})
+                            exec(file.read(), namespace, namespace)
                     except Exception as e:
                         print(f"Error: {str(e)}")
                     finally:

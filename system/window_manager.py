@@ -182,6 +182,9 @@ class PyAppWindow(Window):
         self.window_manager = window_manager
         
         # Create namespace for the app
+        # path needs to be a full valid path. so get the location on the parent of this file, then append \filesystem\appname tpo ot
+        path = __file__.replace("system/window_manager.py", "") + "filesystem\\" + title + ".pya"
+        path = path.replace("\\", "/")  # Normalize path for cross-platform compatibility. Linux hates backslashes but windows is kinda okay with forward slashes so forward slashes areb etter.
         self.namespace = {
             'pygame': pygame,
             'psutil': psutil,  # Add psutil to namespace
@@ -192,6 +195,7 @@ class PyAppWindow(Window):
             'io': io,
             'os': __import__('os'),
             '__name__': '__main__',
+            '__file__': path,
             '__builtins__': __builtins__,
             'running': True,
             'delta_time': 0.0,
@@ -344,12 +348,13 @@ class PyAppWindow(Window):
         return self.window_manager
 
 class WindowManager:
-    def __init__(self, screen):
+    def __init__(self, screen, filesystem):
         self.screen = screen
         self.windows = []
         self.windows_to_remove = []  # Add this to track windows that need removal
         self.last_frame_time = time.time()
         self.frame_times = []  # Store last 60 frame times
+        self.filesystem = filesystem
         
     def create_window(self, window):
         self.windows.append(window)
@@ -403,16 +408,18 @@ class WindowManager:
         for window in self.windows:
             window.draw(self.screen)
 
-    def create_api(self):
+    def create_api(self, fs):
         """Create API object with limited system calls for apps"""
-        return {
+        api = {
             'spawn_window': self.create_window,
             'close_window': lambda window: self.windows_to_remove.append(window),
             'windows': self.windows,  # Direct access to windows list
             'bring_to_front': self.bring_to_front,
             'get_performance': self.get_performance,  # Match the method name
-            'terminate_window': self.terminate_window
+            'terminate_window': self.terminate_window,
+            'filesystem': fs  # Add filesystem instance to API
         }
+        return api
     
     def get_performance(self):  # Rename to match API
         """Get system performance metrics"""

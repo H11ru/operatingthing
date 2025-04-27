@@ -74,6 +74,34 @@ class FileSystem:
         self._update_timestamp(path)
         return virtual_file
 
+    def delete_file(self, path):
+        """Delete a file from both virtual and real filesystem"""
+        parts = path.strip("/").split("/")
+        filename = parts[-1]
+        dir_path = parts[:-1]
+
+        current = self.root
+        for dir_name in dir_path:
+            if dir_name not in current.directories:
+                raise FileNotFoundError(f"Directory not found: {dir_name}")
+            current = current.directories[dir_name]
+
+        if filename not in current.files:
+            raise FileNotFoundError(f"File not found: {filename}")
+
+        # Move to /filesystem/$bin
+        bin_path = self._real_root / "bin" / filename
+        bin_path.parent.mkdir(parents=True, exist_ok=True)
+        bin_path.write_text(current.files[filename].content)
+        bin_path.unlink()  # Delete the original file
+        # This has now deleted the file from the real filesystem
+        # Now delete from virtual filesystem
+        del current.files[filename]
+        # Update the timestamp
+        self._update_timestamp(path)
+            
+
+
     def read_file(self, path):
         """Read a file from the virtual filesystem"""
         parts = path.strip("/").split("/")

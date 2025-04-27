@@ -87,8 +87,8 @@ def save_game_data():
             'world': world_data,
             'version': 1  # For future compatibility
         }
-        with open(SAVE_PATH, 'w') as f:
-            json.dump(save_data, f)
+        # Use the PyOS filesystem API to create the file
+        api.filesystem.create_file("gaime_save.json", json.dumps(save_data), "json")
     except Exception as e:
         print(f"Error saving game data: {e}")
 
