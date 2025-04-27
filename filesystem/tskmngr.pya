@@ -28,7 +28,7 @@ def main(screen, rect):
     current_time = pygame.time.get_ticks()
     
     # Update performance metrics every 500ms (2 times per second) to reduce CPU usage
-    if current_time - last_perf_update > 500:
+    if current_time - last_perf_update > 2000:
         metrics = api.get_performance()
         if metrics:
             last_metrics = metrics
@@ -37,11 +37,9 @@ def main(screen, rect):
     # Draw background
     pygame.draw.rect(screen, DARK_GRAY, rect)
     
-    # Get metrics
-    cpu_percent = psutil.cpu_percent(interval=None)  # Use non-blocking CPU check
-    memory = psutil.virtual_memory()
-    memory_percent = memory.percent
-    
+    cpu_percent = last_metrics.get('cpu', 0)
+    memory_percent = last_metrics.get('memory', 0)
+
     # Draw metrics section
     y = rect.y + 10
     font = pygame.font.SysFont('Arial', 16)
@@ -80,8 +78,10 @@ def main(screen, rect):
     filled_rect = pygame.Rect(rect.x + 20, y, filled_width, bar_height)
     pygame.draw.rect(screen, GREEN if memory_percent < 80 else RED, filled_rect)
     
-    # Draw windows list
-    y += 40  # Increased spacing before window list
+
+
+
+    y += 40  # 
     
     # Draw window list section
     pygame.draw.line(screen, (100, 100, 100), 

@@ -443,7 +443,9 @@ class WindowManager:
                 current_fps = 0
                 
             metrics = {
-                'cpu': psutil.cpu_percent(interval=0.1),
+                #'cpu': psutil.cpu_percent(interval=0.1), # BAD. causes lag and doesnt even report he right value msto of the time
+                # use a better instant method that also gives correct result
+                "cpu": psutil.cpu_percent(interval=None), # Get CPU usage without delay
                 'memory': psutil.virtual_memory().percent,
                 'window_count': len(self.windows),
                 'fps': int(current_fps)
